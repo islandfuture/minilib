@@ -14,50 +14,50 @@ class Application extends Only
 {
     //@var Array массив параметров конфигурации
     private $arConfig=array();
-    
+
     //@var string название текущей страницы (точнее запрашиваемой)
     public $sCurPage = 'portal/index';
 
     //@var string name of templates directory
     public $sLayout = 'main';
-    
+
     //@var string основное содержание страницы
     public $sPageContent = '';
-    
+
     //@var array массив для обмена переменными между блоками
     public $properties = array();
 
     public $sUserLang = '';
-    
+
     protected $modules = array();
 
     /**
      * Возвращает данные, сохраненные в Application::$arConfig в индексе $name
      * @param string $name имя переменных
-     * 
+     *
      * @example
      *  $superData = Application::one()->superData;
-     *  
-     * @return mixed 
+     *
+     * @return mixed
      */
     public function __get($name)
     {
         if (empty($this->arConfig[$name])) {
             return null;
         }
-        
+
         return $this->arConfig[$name];
     }
-    
+
     /**
      * Сохраняем данные, в Application::$arConfig в индексе $name
      * @param string $name имя индекса в arConfig, где сохраняются данные $val
      * @param mixed $val
-     * 
+     *
      * @example
      *  Application::one()->superData = array('example' => true);
-     *  
-     * @return mixed 
+     *
+     * @return mixed
      */
     public function __set($name, $val)
     {
@@ -82,7 +82,7 @@ class Application extends Only
         } else {
             $_SERVER['DOCUMENT_ROOT'] = realpath($_SERVER['DOCUMENT_ROOT']);
         }
-        
+
         $sPublicPath = $_SERVER['DOCUMENT_ROOT'].DIRECTORY_SEPARATOR;
         $sAppPath = $_SERVER['DOCUMENT_ROOT'].DIRECTORY_SEPARATOR.'inc'.DIRECTORY_SEPARATOR;
         $sVendorPath = $_SERVER['DOCUMENT_ROOT'].DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR;
@@ -108,7 +108,7 @@ class Application extends Only
 
         // регистрируем автозагрузчик классов
         spl_autoload_register(array($this, 'appAutoload' ), false);
-        
+
         $this->startScript = date('Y-m-d H:i:s');
 
         $this->arConfig['PATH_ROOT'] = $_SERVER['DOCUMENT_ROOT'].DIRECTORY_SEPARATOR;
@@ -116,7 +116,7 @@ class Application extends Only
         $this->arConfig['PATH_PAGES'] = $sPublicPath.'pages'.DIRECTORY_SEPARATOR;
         $this->arConfig['PATH_PUBLIC'] = $sPublicPath;
         $this->arConfig['PATH_VENDOR'] = $sVendorPath;
- 
+
         /* глобальные переменные для хранения последних ошибок или сообщений */
         $this->arBlockVars['lasterror'] = '';
         $this->arBlockVars['lastmessage'] = '';
@@ -126,7 +126,7 @@ class Application extends Only
         if ($this->debug == 'Y') {
             ini_set('display_errors', 1);
         }
-        
+
         /* регистрируем обработчики исключений и ошибок */
         set_error_handler(array($this,'appError'), E_ALL | E_STRICT | E_USER_ERROR);
         set_exception_handler(array($this, 'appException'));
@@ -167,7 +167,7 @@ class Application extends Only
             } else {
                 $sPath = $this->PATH_APP.$this->arConfig['include'][ $sClassName ];
             }
-            
+
             if (file_exists($sPath)) {
                 include_once $sPath;
                 return true;
@@ -175,6 +175,8 @@ class Application extends Only
                 return;
                 // throw new \Exception('Class ['.$sClassName.'] not found in path ['.$sPath.']');
             }
+        } elseif (strpos($sClassName,'\\') !== false && file_exists($this->PATH_APP . str_replace('\\', '/', $sClassName).'.php')) {
+            include_once $this->PATH_APP . str_replace('\\', '/', $sClassName) . '.php';
         } elseif (strpos($sClassName,'/') !== false && file_exists($this->PATH_APP.$sClassName.'.php')) {
             include_once $this->PATH_APP.$sClassName.'.php';
         } else {
@@ -185,18 +187,18 @@ class Application extends Only
 
     /**
      * Функция вешается как обработчик ошибок
-     * 
+     *
      * @param int $errno номер ошибки
      * @param string $errstr текст ошибки
      * @param string $errfile название файла в котором произошла ошибка
-     * 
+     *
      * @return bool
      */
     public function appError($errno, $errstr, $errfile = __FILE__, $errline = __LINE__, $errcontext  =array())
     {
         throw new ErrorException($errstr, $errno, 1, $errfile, $errline);
     }
-    
+
     /**
      * Функция вешается на исключения
      */
@@ -218,7 +220,7 @@ class Application extends Only
                 return;
             }
         }
-        
+
         if ($e instanceof Http403) {
             header('HTTP/1.0 403 Forbidden');
             if( Application::one()->output == 'json') {
@@ -243,13 +245,13 @@ class Application extends Only
             echo $e->getTraceAsString();
             echo "\n-----------------------------\n";
         }
-        
+
         if( Application::one()->output == 'json') {
             header('HTTP/1.0 500 Internal server error');
             die(json_encode(array('error' => 'Unknown error')));
             return;
         }
-        
+
         die('<html><head><title>Error in '.Application::one()->web['name'].'</title><meta charset="utf-8" /><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head><body><table style="width:100%; height:100%;"><tr><td style="vertical-align: middle; text-align: center;"><h1>Произошло что-то страшное.</h1><p>Разработчикам уже сообщили и они трудятся боясь получить по шее.</p></td></tr></table></body></html>');
     }
     public static function appShutdown()
@@ -268,7 +270,7 @@ class Application extends Only
         // Checking if last error is a fatal error
         if (($error['type'] === E_ERROR) || ($error['type'] === E_USER_ERROR)|| ($error['type'] === E_USER_NOTICE)) {
             $errstr = "ERROR: " . $error['type']. " |Msg : ".$error['message']." |File : ".$error['file']. " |Line : " . $error['line'];
-            
+
             if (Application::one()->debug == 'Y') {
                 if( Application::one()->output == 'json') {
                     die(json_encode(array('error' => $errstr)));
@@ -278,20 +280,20 @@ class Application extends Only
                 echo $errstr."\n";
                 echo "\n-----------------------------\n";
             }
-            
+
             if( Application::one()->output == 'json') {
                 header('HTTP/1.0 500 Internal server error');
                 die(json_encode(array('error' => 'Unknown error')));
                 return;
             }
-            
+
             die('<html><head><title>Unknown Error</title><meta charset="utf-8" /><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head><body><table style="width:100%; height:100%;"><tr><td style="vertical-align: middle; text-align: center;"><h1>Произошло что-то страшное.</h1><p>Разработчикам уже сообщили и они трудятся боясь получить по шее.</p></td></tr></table></body></html>');
 
         } else {
             //echo "no error where found " ;
-         
+
         }
-    }    
+    }
     /**
      * метод нужен для избежания не правильной инициализции класса в качестве синглтона.
      */
@@ -306,7 +308,7 @@ class Application extends Only
             }
         }
     }
-    
+
     /**
      * Превращает текущий веб-путь в дисковый путь
      *
@@ -335,9 +337,9 @@ class Application extends Only
             if (substr($this->sCurPage, -1, 1) == '/') {
                 $this->sCurPage = substr($this->sCurPage, 0, -1);
             }
-            
+
         }//end if
-        
+
         return header('Location: /'.$this->sCurPage.'/');
     }
 
@@ -375,7 +377,7 @@ class Application extends Only
         } else {
             $arTmp = array();
         }
-        
+
         $sHtml = '';
         foreach ($arTmp as $sScript) {
             if(substr($sScript, 0, 4) == 'http' || substr($sScript, 0, 1) == '/') {
@@ -424,7 +426,7 @@ class Application extends Only
         else {
             $arTmp = array();
         }
-        
+
         $sHtml = '';
         foreach ($arTmp as $sScript) {
             if(substr($sScript, 0, 4) == 'http' || substr($sScript, 0, 1) == '/') {
@@ -433,7 +435,7 @@ class Application extends Only
                 $sHtml .= '<style type="text/css">' . "\n" . $sScript . "\n" . '</style>' . "\n";
             }
         }
-        
+
         return "\n<!-- BEGIN: all external css $sPosition -->\n" . $sHtml . "\n<!-- END: all external css $sPosition -->\n";
     }
 
@@ -468,12 +470,12 @@ class Application extends Only
             return '';
         }
     }//end function
-    
+
     public function setProperty($name, $value)
     {
         $this->properties[$name] = $value;
     }//end function
-    
+
     public function getProperty($name)
     {
         if (isset($this->properties[$name])) {
@@ -492,13 +494,13 @@ class Application extends Only
         if (! empty($this->modules[$module])) {
             return true;
         }
-        
+
         if (file_exists($this->PATH_APP.'externals'.DIRECTORY_SEPARATOR.$path)) {
             $this->modules[$module] = $path;
             include_once $this->PATH_APP.'externals'.DIRECTORY_SEPARATOR.$path;
             return true;
         }
-        
+
         return false;
     }//end function
 
@@ -524,7 +526,7 @@ class Application extends Only
             throw new Exception('Cannot open log file');
         }
     }
-    
+
     /**
      * Метод соединяет шапку, футер и страницу и показывает это.
      *
@@ -544,13 +546,13 @@ class Application extends Only
         } else {
             throw new Exception('Страница: '.$page.' не найдена');
         }
-        
+
         include $this->PATH_APP.'layout'.DIRECTORY_SEPARATOR.$template.DIRECTORY_SEPARATOR.'header.php';
         echo $sHtml;
         include $this->PATH_APP.'layout'.DIRECTORY_SEPARATOR.$template.DIRECTORY_SEPARATOR.'footer.php';
     }
-    
-    
+
+
     public function xorCrypt($String, $Password)
     {
         $Salt='jkdhf483ythk2b';
@@ -568,7 +570,7 @@ class Application extends Only
         }*/
         return $String^$Gamma;
     }
-    
+
     public function cleanString($string)
     {
         $string = strip_tags($string);
@@ -580,7 +582,7 @@ class Application extends Only
         if ($this->sUserLang == '') {
             /* определяем язык, чтобы знать на каком сообщить об успешной отправки */
             $ru=array('ru','be','uk','ky','ab','mo','et','lv');
-            
+
             $this->sUserLang="EN";
             if(isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])){
                 $htal=$_SERVER['HTTP_ACCEPT_LANGUAGE'];
@@ -596,24 +598,22 @@ class Application extends Only
                 } else {
                     $language = array();
                 }
-                
+
                 foreach ($language as $l => $v) {
                     unset($language[$l]);
                     $s = strtok($l, '-');
                     $language[$s]=$v;
-                }    
-                
+                }
+
                 foreach ($language as $l => $v) {
                     if (in_array($l, $ru)) {
                         $this->sUserLang="RU";
                     }
                 }
-        
+
             }
         }
-        
+
         return $this->sUserLang;
     }
-    
-    
 }
