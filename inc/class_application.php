@@ -25,7 +25,7 @@ class Application extends Only
     public $sPageContent = '';
 
     //@var array массив для обмена переменными между блоками
-    public $properties = array();
+    public $arProperties = array();
 
     public $sUserLang = '';
 
@@ -118,9 +118,9 @@ class Application extends Only
         $this->arConfig['PATH_VENDOR'] = $sVendorPath;
 
         /* глобальные переменные для хранения последних ошибок или сообщений */
-        $this->arBlockVars['lasterror'] = '';
-        $this->arBlockVars['lastmessage'] = '';
-        $this->arBlockVars['js_bottom'] = array();
+        $this->arProperties['lasterror'] = '';
+        $this->arProperties['lastmessage'] = '';
+        $this->arProperties['js_bottom'] = array();
 
         error_reporting(E_ALL);
         if ($this->debug == 'Y') {
@@ -352,14 +352,14 @@ class Application extends Only
      */
     public function addClientJs($sName, $sScript, $sPosition='top')
     {
-        if (empty($this->arBlockVars['js'])) {
-            $this->arBlockVars['js'] = array();
+        if (empty($this->arProperties['js'])) {
+            $this->arProperties['js'] = array();
         }
-        if (empty($this->arBlockVars['js'][$sPosition]) || ! is_array($this->arBlockVars['js'][$sPosition])) {
-            $this->arBlockVars['js'][$sPosition] = array();
+        if (empty($this->arProperties['js'][$sPosition]) || ! is_array($this->arProperties['js'][$sPosition])) {
+            $this->arProperties['js'][$sPosition] = array();
         }
 
-        $this->arBlockVars['js'][$sPosition][$sName] = $sScript;
+        $this->arProperties['js'][$sPosition][$sName] = $sScript;
     }
 
     /**
@@ -369,11 +369,11 @@ class Application extends Only
     {
         if ($sPosition == '') {
             $arTmp = array();
-            foreach ($this->arBlockVars['js'] as $arScript) {
+            foreach ($this->arProperties['js'] as $arScript) {
                 $arTmp += $arScript;
             }
-        } elseif (isset($this->arBlockVars['js'][$sPosition])) {
-            $arTmp = $this->arBlockVars['js'][$sPosition];
+        } elseif (isset($this->arProperties['js'][$sPosition])) {
+            $arTmp = $this->arProperties['js'][$sPosition];
         } else {
             $arTmp = array();
         }
@@ -399,14 +399,14 @@ class Application extends Only
      */
     public function addClientCss($sName, $sScript, $sPosition='top')
     {
-        if (empty($this->arBlockVars['css'])) {
-            $this->arBlockVars['css'] = array();
+        if (empty($this->arProperties['css'])) {
+            $this->arProperties['css'] = array();
         }
-        if (empty($this->arBlockVars['css'][$sPosition]) || ! is_array($this->arBlockVars['css'][$sPosition])) {
-            $this->arBlockVars['css'][$sPosition] = array();
+        if (empty($this->arProperties['css'][$sPosition]) || ! is_array($this->arProperties['css'][$sPosition])) {
+            $this->arProperties['css'][$sPosition] = array();
         }
 
-        $this->arBlockVars['css'][$sPosition][$sName] = $sScript;
+        $this->arProperties['css'][$sPosition][$sName] = $sScript;
     }
 
     /**
@@ -416,12 +416,12 @@ class Application extends Only
     {
         if ($sPosition == '') {
             $arTmp = array();
-            foreach ($this->arBlockVars['css'] as $arScript) {
+            foreach ($this->arProperties['css'] as $arScript) {
                 $arTmp += $arScript;
             }
         }
-        elseif (isset($this->arBlockVars['css'][$sPosition])) {
-            $arTmp = $this->arBlockVars['css'][$sPosition];
+        elseif (isset($this->arProperties['css'][$sPosition])) {
+            $arTmp = $this->arProperties['css'][$sPosition];
         }
         else {
             $arTmp = array();
@@ -473,13 +473,13 @@ class Application extends Only
 
     public function setProperty($name, $value)
     {
-        $this->properties[$name] = $value;
+        $this->arProperties[$name] = $value;
     }//end function
 
     public function getProperty($name)
     {
-        if (isset($this->properties[$name])) {
-            return $this->properties[$name];
+        if (isset($this->arProperties[$name])) {
+            return $this->arProperties[$name];
         } else {
             return '';
         }

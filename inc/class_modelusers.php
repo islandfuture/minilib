@@ -1,10 +1,10 @@
 <?php
 /**
- * 
+ *
  */
 class ModelUsers extends Model
 {
-    
+
     /**
      * функция возвращает название таблицы в которой хранятся сущности данного класса
      * @return string
@@ -22,7 +22,7 @@ class ModelUsers extends Model
     {
         return 'Пользователи';
     }
-    
+
     /**
      * функция возвращает способ генерации значения первичного ключа
      *
@@ -57,6 +57,7 @@ class ModelUsers extends Model
             'name' => null,
             'email' => null,
             'passwd' => null,
+            'checkcode' => null,
             'statusid' => null,
             'created' => null,
             'modified' => null,
@@ -74,6 +75,7 @@ class ModelUsers extends Model
             'name' => '',
             'passwd' => '',
             'statusid' => '0',
+            'checkcode' => '',
             'modifed' => '0000-00-00 00:00:00',
             'created' => 'CURRENT_TIMESTAMP',
             'expired' => '0000-00-00 00:00:00',
@@ -83,8 +85,8 @@ class ModelUsers extends Model
     /**
      * список функций отвечающих за свзяи с другими моделями
      */
-    
-    
+
+
     public function status($isOne=true, $idx=0)
     {
         $arRelations = array(
