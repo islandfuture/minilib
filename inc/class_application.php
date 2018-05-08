@@ -616,4 +616,25 @@ class Application extends Only
 
         return $this->sUserLang;
     }
+
+    // проверяем запуск скрипта на разовый запуск (используется в кронах,
+    // где важно чтобы один и тот же скрипт работал только в одном экземпляре)
+    public function checkOneRun($script='')
+    {
+        $sSystemName    = php_uname();
+        if ( !empty($sSystemName) && !preg_match("/Windows/iu", $sSystemName)) {
+            if (empty($script)) {
+                $script = $_SERVER['SCRIPT_NAME'];
+            }
+            $command = "ps aux | grep -v -E 'grep|bash|\/sh|ps aux' | grep ".$script;
+            $output = '';
+            if (exec($command, $output)) {
+                if (is_array($output) && sizeof($output) > 1) {
+                    die("Cannot run ".$script.", because proccess already RUN\n");
+                }
+            }
+        }
+
+    }
+
 }

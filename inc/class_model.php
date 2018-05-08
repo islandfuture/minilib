@@ -10,13 +10,13 @@ class Model
      * @var string $lastError последнее сообщение об ошибке
      */
     public static $lastError='';
-    
+
     /**
      * @var boolean $isNewRecord признак новой записи
      * (используется для выбра способа сохранения записи Insert или Update)
      */
     public $isNewRecord     = false;
-    
+
     /**
      * @var array $arFields - массив название и значений полей
      */
@@ -132,7 +132,7 @@ class Model
 
     /**
      * Возвращает TRUE если запрашиваемое поле с именем $name есть в модели/таблице
-     * @param string $name 
+     * @param string $name
      * @return boolean
      **/
     static public function is($name)
@@ -157,7 +157,7 @@ class Model
      * @return mixed
      */
     public function __get($name)
-    {        
+    {
         if (! $name) {
             return null;
         }
@@ -165,7 +165,7 @@ class Model
         if (key_exists($name, $this->arFields)) {
             return $this->arFields[$name];
         }
-        
+
         $arTrace = debug_backtrace();
         $e = new ErrorException('Unknown fields ' . get_class($this) . '::$' . $name, E_USER_ERROR, 1, $arTrace[0]['file'], $arTrace[0]['line']);
         throw $e;
@@ -190,20 +190,20 @@ class Model
             throw new ErrorException('Cannot set value to unknown fields ' . get_class($this) . '::$' . $name, E_USER_ERROR, 1, $arLast['file'], $arLast['line']);
         }
     }
-    
-    public function __isset($name) 
+
+    public function __isset($name)
     {
         return isset($this->arFields[$name]);
     }
 
-    
-    public function __unset($name) 
+
+    public function __unset($name)
     {
         if (isset($this->arFields[$name])) {
             $this->arFields[$name] = null;
         }
     }
-    
+
     /**
      * возвращает список OPTION для вставки в тег SELECT
      * @param string $sRelname название свзяи значения, которой нужно вывести
@@ -224,7 +224,7 @@ class Model
                     $arResult[] = '<option value="' . $mRelation->{$sKey} . '" ' . ($mRelation->{$sKey} == $selected ? 'selected="selected"' : '') . '>' . $mRelation->{$sViewField} . '</option>';
                 }
             }/* end foreach */
-            
+
         }
 
         return implode("\n", $arResult);
@@ -262,7 +262,7 @@ class Model
      * Удалить текущий объект из БД
      * Если определена функции beforeDelete, то она будет вызвана перед удалением, а afterDelete - после удаления записи в БД
      */
-    public function delete($arParams = array()) 
+    public function delete($arParams = array())
     {
         $bTransaction = false;
 
@@ -272,7 +272,7 @@ class Model
         if (! isset($arParams['before'])) {
             $arParams['before'] = false;
         }
-        
+
         if (! isset($arParams['after'])) {
             $arParams['after'] = false;
         }
@@ -303,12 +303,12 @@ class Model
             }
             return false;
         }
-        
+
         /* удаляем запись */
         $idKey = static::getIdName();
         $sql     = "DELETE FROM " . $sTable . " WHERE ".$idKey." = '" . $this->arFields[$idKey] . "'";
         $result     = DB::one()->execute($sql);
-    
+
         /* очищаем кеш связанный с этим классом/таблицей */
         $sClassName = get_called_class();
         DB::clearInnerCache($sClassName);
@@ -382,7 +382,7 @@ class Model
         $idname          = static::getIdName();
         $bTransaction    = false;
         $sClassName = get_called_class();
-        
+
         if ($idname && !$this->__get($idname)) {
             $this->isNewRecord = true;
         }
@@ -467,7 +467,7 @@ class Model
                 if (is_array($value)) {
                     $value = base64_encode(json_encode($value));
                 }
-                
+
                 if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields'])) {
                     $value = "AES_ENCRYPT(".DB::one()->quote($value).",UNHEX('".$arParams['securesecret']."'))";
                     $values[$key] = $value;
@@ -480,7 +480,7 @@ class Model
                 }// end if
             }
         }//end foreach
-        
+
         if ($this->isNewRecord) {
 
             if (empty($values[$idname] ) || $values[$idname] == "''") {
@@ -502,7 +502,7 @@ class Model
                     while($isExists);
 
                     $values[$idname] = "'" . $uid . "'";
-                    $this->$idname = $uid; 
+                    $this->$idname = $uid;
                     break;
                 case 'GUID':
 
@@ -520,7 +520,7 @@ class Model
                     } while($isExists);
 
                     $values[$idname] = "'" . $uid . "'";
-                    $this->$idname = $uid; 
+                    $this->$idname = $uid;
                     break;
                 case 'AUTOINC':
                     $values[$idname] = 'NULL';
@@ -544,7 +544,7 @@ class Model
 
         $result = DB::one()->execute($sql);
         DB::clearInnerCache($sClassName);
-        
+
         if($result !== false) {
 
             if ($result === 0) {
@@ -617,19 +617,19 @@ class Model
             $sTable = '`'.static::getTable().'`';
         }
         $idname = static::getIdName();
-        
+
         if (!static::is($field)) {
             return false;
         }
-        
+
         if ($where > '' ) { $where = ' AND '.$where; }
-        
+
         $sql = "UPDATE " . $sTable . " SET `".$field."`=`".$field."` + '".$step."'" .
                 " WHERE $idname = '" . $this->$idname . "'".$where;
 
         /* выполняем запрос на увеличение */
         $result = DB::one()->execute($sql);
-        
+
         /* очищаем кеш */
         DB::clearInnerCache($sClassName);
 
@@ -641,7 +641,7 @@ class Model
                 )
             )
         );
-        
+
         $this->$field = $tmp->$field;
         return $result;
     }
@@ -658,11 +658,11 @@ class Model
             $sTable = '`'.static::getTable().'`';
         }
         $idname = static::getIdName();
-        
+
         if (!static::is($field)) {
             return false;
         }
-        
+
         if ($where > '' ) { $where = ' AND '.$where; }
 
         $sql = "UPDATE " . $sTable . " SET `".$field."`=`".$field."` - '".$step."'" .
@@ -671,7 +671,7 @@ class Model
         $result = DB::one()->execute($sql);
         DB::clearInnerCache($sClassName);
 
-        
+
         $tmp = DB::getOne(array(
                 'sModel' => $sClassName,
                 'arFilter' => array(
@@ -684,7 +684,7 @@ class Model
     }
 
     /*     * ************ Utility ******************* */
-    
+
     /**
      * Возвращаем поле с датой в нужном формате
      * @param string $name название поля
@@ -718,7 +718,7 @@ class Model
     {
         return Validator::isValidateModel($this);
     }
-    
+
     /** error functions **/
 
     /**
@@ -732,7 +732,7 @@ class Model
         DB::addError($sError, get_class($this), $sField);
         return $this;
     }
-    
+
     /**
      * Проверяем, есть ли ошибка в каком-то поле или в целом в моделе
      * @param string $sField      название поля которое проверяется (нужено указать "_" - для проверки общих ошибок)
@@ -756,7 +756,7 @@ class Model
     /**
      * Функция возвращает массив из текстов ошибок для указанного поля
      *
-     * @return array 
+     * @return array
      */
     public function getError($sField = '_', $isClear = true)
     {
@@ -766,14 +766,14 @@ class Model
     /**
      * Функция возвращает массив из текстов ошибок для указанного поля
      *
-     * @return array 
+     * @return array
      */
     public function getErrors($isClear = false)
     {
         return DB::getErrors(get_class($this), $isClear);
     }
-    
-    
+
+
     public static function getRow($arParams, $arSysOptions=array())
     {
         $arParams['sModel'] =  get_called_class();
@@ -791,11 +791,53 @@ class Model
         $arParams['sModel'] =  get_called_class();
         return DB::one()->getCountAll($arParams, $arSysOptions);
     }
-    
+
+    public static function getMax($field,$arParams, $arSysOptions=array())
+    {
+        $arParams['sModel'] =  get_called_class();
+        $arParams['fields'] = '`'.$field.'` as cnt';
+        $arParams['arSort'] = array($field => 'desc');
+        $arParams['iPageSize'] = 1;
+        $arParams['iPage'] = 1;
+        $sSql = DB::generateSelectSQL($arParams);
+        $st = DB::one()->query($sSql);
+        $iResult = false;
+        if ($st) {
+            $arTmp = $st->fetch(PDO::FETCH_ASSOC);
+            if (isset($arTmp['cnt'])) {
+                $iResult=$arTmp['cnt'];
+            }
+        }
+
+        return $iResult;
+    }
+
+    public static function getMin($field, $arParams, $arSysOptions=array())
+    {
+        $arParams['sModel'] =  get_called_class();
+        $arParams['fields'] = 'min('. $field .') as cnt';
+        $sSql = DB::generateSelectSQL($arParams);
+        $st = DB::one()->query($sSql);
+        $iResult = false;
+        if ($st) {
+            $arTmp = $st->fetch(PDO::FETCH_ASSOC);
+            if (isset($arTmp['cnt'])) {
+                $iResult=$arTmp['cnt'];
+            }
+
+        }
+
+        return $iResult;
+    }
+
     public static function getById($id, $arParams=array())
     {
         $idName = static::getIdName();
         $sModel =  get_called_class();
+        $arSpecs = array();
+        if (isset($arParams['nocache']) && $arParams['nocache']) {
+            $arSpecs['nocache'] = true;
+        }
         if (! empty($arParams['securesecret']) && ! empty($arParams['securefields'])) {
             return DB::getOne(
                 array(
@@ -806,7 +848,7 @@ class Model
                     'iPageSize' => 1,
                     'securesecret' => $arParams['securesecret'],
                     'securefields' => $arParams['securefields']
-                )
+                ), $arSpecs
             );
         }
         return DB::getOne(
@@ -816,7 +858,7 @@ class Model
                     $idName => array('=' => intval($id) )
                 ),
                 'iPageSize' => 1
-            )
+            ), $arSpecs
         );
     }
 
