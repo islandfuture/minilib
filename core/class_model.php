@@ -3,8 +3,15 @@
 /**
  * Класс для работы с объектами в базе. Нужен для описания типов объектов и облегечения
  * работы с рутинными операциями: save, delete
+ *
+ * Если у поля проставить тип UUID то нужно задать uidMin и uidMax
+ * между которыми будет создаваться случайное значение
+ * Если нужно чтобы UUID/GUID - были различны на разных серверах, то нужно
+ * в конфиге нужно велючить сдвиг App::I()->needUidOffset == 'yes' и
+ * задать величину сдвига, например 2:  App::I()->uidOffset=2
+ * это будет означать что все случайные числа будут заканчиваться на 2
  */
-class Model
+class Model implements JsonSerializable
 {
     /**
      * @var string $lastError последнее сообщение об ошибке
@@ -55,7 +62,7 @@ class Model
     {
         $str = "array(\n";
         foreach ($this->arFields as $key => $value) {
-            $str .= "\t'$key' => " . DB::one()->quote($value) . ",\n";
+            $str .= "\t'$key' => " . DB::I()->quote($value) . ",\n";
         }//end foreach
         $str .= ")\n";
 
@@ -293,28 +300,28 @@ class Model
          */
         if (isset($arParams['transaction'] ) && $arParams['transaction'] == true) {
             $bTransaction = true;
-            DB::one()->begin();
+            DB::I()->begin();
         }
 
         /* если есть функция, которую нужно вызвать до удаления - вызываем ее */
         if (! $this->beforeDelete($arParams['before'])) {
             if ($bTransaction) {
-                DB::one()->rollback();
+                DB::I()->rollback();
             }
             return false;
         }
 
         /* удаляем запись */
         $idKey = static::getIdName();
-        $sql     = "DELETE FROM " . $sTable . " WHERE ".$idKey." = '" . $this->arFields[$idKey] . "'";
-        $result     = DB::one()->execute($sql);
+        $sql     = "DELETE FROM " . $sTable . " WHERE ".$idKey." = '" . $this->arFields[$idKey] . "' LIMIT 1";
+        $result     = DB::I()->execute($sql);
 
         /* очищаем кеш связанный с этим классом/таблицей */
         $sClassName = get_called_class();
         DB::clearInnerCache($sClassName);
 
         if (! $result) {
-                $err = DB::one()->errorInfo();
+                $err = DB::I()->errorInfo();
             if ($err[0] != '00000') {
                 echo "<div class='error'>" . $sql;
                 echo ($err);
@@ -328,18 +335,19 @@ class Model
             if ($this->afterDelete($arParams['after']) === false) {
                 /* если что-то пошло не так и у нас запущена транзакция, то откатываем удаление */
                 if ($bTransaction) {
-                    DB::one()->rollback();
+                    DB::I()->rollback();
                 }
                 $result = false;
             } else {
                 /* если запущена транзакция, фиксируем ее */
                 if ($bTransaction) {
-                    DB::one()->commit();
+                    DB::I()->commit();
                 }
+                $this->onChange(['action' => 'delete']);
             }
         } elseif ($result === false && $bTransaction) {
             /* если произошла ошибка и определена транзакция - откатываемся */
-            DB::one()->rollback();
+            DB::I()->rollback();
         }
 
         return $result;
@@ -362,6 +370,11 @@ class Model
     }
 
     protected function afterSave($mParams=array() )
+    {
+        return true;
+    }
+
+    protected function onChange($mParams=array())
     {
         return true;
     }
@@ -417,13 +430,13 @@ class Model
          */
         if (isset($arParams['transaction'] ) && $arParams['transaction'] == true) {
             $bTransaction = true;
-            DB::one()->begin();
+            DB::I()->begin();
         }
 
 
         if (! $this->beforeSave($arParams['before'])) {
             if ($bTransaction) {
-                DB::one()->rollback();
+                DB::I()->rollback();
             }
             return false;
         }
@@ -440,6 +453,9 @@ class Model
                         do
                         {
                             $uid = mt_rand($this->uidMin, $this->uidMax);
+                            if (App::I()->needUidOffset == 'yes' && App::I()->uidOffset > 0) {
+                                $uid = substr(''.$uid, -1).App::I()->uidOffset;
+                            }
                             $isExists = DB::getCountAll(
                                 array(
                                     'sDatabase' => $this->getDatabase(),
@@ -455,7 +471,7 @@ class Model
                         $values_upd[$key]     = "`" . $key . "`=" . $values[$key];
                         $this->__set($key, $uid);
                     } else {
-                        $values[$key]         = DB::one()->quote($def[$key]); //$value;
+                        $values[$key]         = DB::I()->quote($def[$key]); //$value;
                         $values_upd[$key]     = "`" . $key . "`=" . $values[$key];
                     }
                     //echo $key.'-';
@@ -469,10 +485,10 @@ class Model
                 }
 
                 if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields'])) {
-                    $value = "AES_ENCRYPT(".DB::one()->quote($value).",UNHEX('".$arParams['securesecret']."'))";
+                    $value = "AES_ENCRYPT(".DB::I()->quote($value).",UNHEX('".$arParams['securesecret']."'))";
                     $values[$key] = $value;
                 } else {
-                    $values[$key] = DB::one()->quote($value);
+                    $values[$key] = DB::I()->quote($value);
                 }
 
                 if ($key != $idname || ($def != 'UUID' && $def != 'AUTOINC' )) {
@@ -489,6 +505,9 @@ class Model
                     do
                     {
                         $uid = mt_rand($this->uidMin, $this->uidMax);
+                        if (App::I()->needUidOffset == 'yes' && App::I()->uidOffset > 0) {
+                            $uid = substr(''.$uid, -1).App::I()->uidOffset;
+                        }
                         $isExists = DB::getCountAll(
                             array(
                                 'sDatabase' => $this->getDatabase(),
@@ -504,10 +523,13 @@ class Model
                     $values[$idname] = "'" . $uid . "'";
                     $this->$idname = $uid;
                     break;
-                case 'GUID':
 
+                case 'GUID':
                     do {
                         $uid = str_replace('.', '', uniqid('', true));
+                        if (App::I()->needUidOffset == 'yes' && App::I()->uidOffset > 0) {
+                            $uid = substr(''.$uid, -1).App::I()->uidOffset;
+                        }
                         $isExists = DB::getCountAll(
                             array(
                                 'sDatabase' => $this->getDatabase(),
@@ -537,18 +559,21 @@ class Model
         }
         else
         {
+
             $sql = "UPDATE " . $sTable . " SET " .
                 implode(',', $values_upd) .
-                " WHERE $idname = '" . $this->$idname . "'";
+                " WHERE $idname = '" . $this->$idname . "' LIMIT 1";
         }//end if else
 
-        $result = DB::one()->execute($sql);
+        //App::I()->log($sql, 'debug');
+
+        $result = DB::I()->execute($sql);
         DB::clearInnerCache($sClassName);
 
         if($result !== false) {
 
             if ($result === 0) {
-                $err = DB::one()->errorInfo();
+                $err = DB::I()->errorInfo();
                 if ($err[0] != '00000') {
                     echo "<div class='error'>" . $sql;
                     var_dump($err);
@@ -557,7 +582,7 @@ class Model
             }
 
             if (static::getIdDefault() == 'AUTOINC' && $this->isNewRecord) {
-                $this->__set($idname, DB::one()->getLastID());
+                $this->__set($idname, DB::I()->getLastID());
             }
 
             $result = true;
@@ -572,20 +597,207 @@ class Model
         if ($result) {
             if (false === $this->afterSave($arParams['after'])) {
                 if ($bTransaction) {
-                    DB::one()->rollback();
+                    DB::I()->rollback();
                 }
                 return false;
             } else {
                 if ($bTransaction) {
-                    DB::one()->commit();
+                    DB::I()->commit();
                 }
+
+                // if ($this->isNewRecord) {
+                //     $sql = str_replace('VALUES(NULL', "VALUES('".$this->__get($idname)."'", $sql);
+                // }
+                $this->onChange(/*[
+                    'sql' => $sql
+                ]*/);
             }
             $this->isNewRecord = false;
         } else {
             if ($bTransaction) {
-                DB::one()->rollback();
+                DB::I()->rollback();
             }
         }
+        return $result;
+    }
+
+
+    public function saveField($key, $arParams=array())
+    {
+        $types           = static::getTypes(); // for future
+        $values_upd      = '';
+        $def             = static::getDefault();
+        $idname          = static::getIdName();
+        $bTransaction    = false;
+        $sClassName = get_called_class();
+
+        if (! static::is($key)) {
+            return false;
+        }
+
+        $value = $this->__get($key);
+
+        // Выставляем базу и таблицу для запроса
+        if (!empty($arParams['sDatabase'])) {
+            $sTable = '`'.$arParams['sDatabase'].'`.`'.static::getTable().'`';
+        } elseif (static::getDatabase() > '') {
+            $sTable = '`'.static::getDatabase().'`.`'.static::getTable().'`';
+        } else {
+            $sTable = '`'.static::getTable().'`';
+        }
+
+        if ($value === null && $key != $idname) {
+            if (isset($def[$key])) {
+                if (in_array($def[$key], [ 'CURRENT_TIMESTAMP', 'now()', 'NOW()', 'NULL' ])) {
+                    $values_upd     = "`" . $key . "`=" . $def[$key];
+                } else {
+                    $value         = DB::I()->quote($def[$key]); //$value;
+                    $values_upd     = "`" . $key . "`=" . $value;
+                }
+            }
+        } else {
+            if (is_array($value)) {
+                $value = base64_encode(json_encode($value));
+            }
+
+            if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields'])) {
+                $value = "AES_ENCRYPT(".DB::I()->quote($value).",UNHEX('".$arParams['securesecret']."'))";
+            } else {
+                $value = DB::I()->quote($value);
+            }
+
+            if ($key != $idname || ($def != 'UUID' && $def != 'AUTOINC')) {
+                $values_upd = "`" . $key . "`=" . $value;
+            }// end if
+        }
+
+        $result = 0;
+        if ($values_upd > '') {
+            if ($key != 'servertime' && static::is('servertime') && static::is('serverid')) {
+                $values_upd .= ", `servertime`='" . (string)microtime(true) . "'";
+                if (empty($arPairs['serverid'])) {
+                    $values_upd .= ", `serverid`='" . App::I()->serverid . "'";
+                }
+            }
+
+            $sql = "UPDATE " . $sTable . " SET " . $values_upd .
+                    " WHERE $idname = '" . $this->$idname . "' ";
+
+            // выполняем запрос на увеличение
+            $result = DB::I()->execute($sql);
+        }
+        // очищаем кеш
+        DB::clearInnerCache($sClassName);
+
+        // делаем запрос актуальных данных
+        $tmp = DB::getOne(
+            [
+                'sModel' => $sClassName,
+                'arFilter' => [
+                    $idname => ['=' => $this->$idname]
+                ]
+            ]
+        );
+        if ($tmp) {
+            $this->attributes($tmp->__getFields());
+        }
+        $this->onChange(['fields' => [$key]]);
+        return $result;
+    }
+
+    public function saveFields($arFields, $arParams=[])
+    {
+        $types           = static::getTypes(); // for future
+        $values_upd      = '';
+        $def             = static::getDefault();
+        $idname          = static::getIdName();
+        $bTransaction    = false;
+        $sClassName = get_called_class();
+
+        if (! is_array($arFields) || sizeof($arFields) == 0) {
+            return false;
+        }
+
+        // Выставляем базу и таблицу для запроса
+        if (!empty($arParams['sDatabase'])) {
+            $sTable = '`'.$arParams['sDatabase'].'`.`'.static::getTable().'`';
+        } elseif (static::getDatabase() > '') {
+            $sTable = '`'.static::getDatabase().'`.`'.static::getTable().'`';
+        } else {
+            $sTable = '`'.static::getTable().'`';
+        }
+
+        if (
+            ! in_array('servertime', $arFields)
+            && static::is('servertime')
+            && static::is('serverid')
+        ) {
+            $arFields[] = 'servertime';
+            $this->__set('servertime', (string)microtime(true));
+            $arFields[] = 'serverid';
+            $this->__set('serverid', App::I()->serverid);
+        }
+
+        $values_upd = [];
+        foreach($arFields as $key) {
+            if (! static::is($key)) {
+                continue;
+            }
+            $value = $this->__get($key);
+
+            if ($value === null && $key != $idname) {
+                if (isset($def[$key])) {
+                    if (in_array($def[$key], [ 'CURRENT_TIMESTAMP', 'now()', 'NOW()', 'NULL' ])) {
+                        $values_upd[]     = "`" . $key . "`=" . $def[$key];
+                    } else {
+                        $values_upd[]     = "`" . $key . "`=" . $value;
+                    }
+                }
+            } else {
+                if (is_array($value)) {
+                    $value = base64_encode(json_encode($value));
+                }
+
+                if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields'])) {
+                    $value = "AES_ENCRYPT(".DB::I()->quote($value).",UNHEX('".$arParams['securesecret']."'))";
+                } else {
+                    $value = DB::I()->quote($value);
+                }
+
+                if ($key != $idname || ($def != 'UUID' && $def != 'AUTOINC')) {
+                    $values_upd[] = "`" . $key . "`=" . $value;
+                }// end if
+            }
+        }
+
+        $result = 0;
+        if (sizeof($values_upd) > 0) {
+            $sql = "UPDATE " . $sTable . " SET " . implode(', ', $values_upd) .
+                    " WHERE $idname = '" . $this->$idname . "' ";
+
+            // выполняем запрос на увеличение
+            $result = DB::I()->execute($sql);
+        } else {
+            return false;
+        }
+
+        // очищаем кеш
+        DB::clearInnerCache($sClassName);
+
+        // делаем запрос актуальных данных
+        $tmp = DB::getOne(
+            [
+                'sModel' => $sClassName,
+                'arFilter' => [
+                    $idname => ['=' => $this->$idname]
+                ]
+            ]
+        );
+        if ($tmp) {
+            $this->attributes($tmp->__getFields());
+        }
+        $this->onChange(['fields' => $arFields]);
+
         return $result;
     }
 
@@ -624,11 +836,17 @@ class Model
 
         if ($where > '' ) { $where = ' AND '.$where; }
 
-        $sql = "UPDATE " . $sTable . " SET `".$field."`=`".$field."` + '".$step."'" .
+        $addupdate = '';
+        if (static::is('servertime') && static::is('serverid')) {
+            $this->serverid = App::I()->serverid;
+            $this->servertime = (string)microtime(true);
+            $addupdate = ", serverid='".App::I()->serverid."', servertime='".$this->servertime."' ";
+        }
+        $sql = "UPDATE " . $sTable . " SET `".$field."`=`".$field."` + '".$step."'" . $addupdate .
                 " WHERE $idname = '" . $this->$idname . "'".$where;
 
         /* выполняем запрос на увеличение */
-        $result = DB::one()->execute($sql);
+        $result = DB::I()->execute($sql);
 
         /* очищаем кеш */
         DB::clearInnerCache($sClassName);
@@ -643,6 +861,7 @@ class Model
         );
 
         $this->$field = $tmp->$field;
+        $this->onChange(['fields' => [$field]]);
         return $result;
     }
 
@@ -665,10 +884,17 @@ class Model
 
         if ($where > '' ) { $where = ' AND '.$where; }
 
-        $sql = "UPDATE " . $sTable . " SET `".$field."`=`".$field."` - '".$step."'" .
+        $addupdate = '';
+        if (static::is('servertime') && static::is('serverid')) {
+            $this->serverid = App::I()->serverid;
+            $this->servertime = (string)microtime(true);
+            $addupdate = ", serverid='".App::I()->serverid."', servertime='".$this->servertime."' ";
+        }
+
+        $sql = "UPDATE " . $sTable . " SET `".$field."`=`".$field."` - '".$step."'" . $addupdate .
                 " WHERE $idname = '" . $this->$idname . "'".$where;
 
-        $result = DB::one()->execute($sql);
+        $result = DB::I()->execute($sql);
         DB::clearInnerCache($sClassName);
 
 
@@ -680,6 +906,7 @@ class Model
             )
         );
         $this->$field = $tmp->$field;
+        $this->onChange(['fields' => [$field]]);
         return $result;
     }
 
@@ -773,23 +1000,33 @@ class Model
         return DB::getErrors(get_class($this), $isClear);
     }
 
-
+    /**
+     * @param $arParams
+     * @param array $arSysOptions
+     * @return static
+     */
     public static function getRow($arParams, $arSysOptions=array())
     {
         $arParams['sModel'] =  get_called_class();
-        return DB::one()->getOne($arParams, $arSysOptions);
+        return DB::I()->getOne($arParams, $arSysOptions);
     }
 
+
+    /**
+     * @param $arParams
+     * @param array $arSysOptions
+     * @return static[]
+     */
     public static function getRows($arParams, $arSysOptions=array())
     {
         $arParams['sModel'] =  get_called_class();
-        return DB::one()->getAll($arParams, $arSysOptions);
+        return DB::I()->getAll($arParams, $arSysOptions);
     }
 
     public static function getCount($arParams, $arSysOptions=array())
     {
         $arParams['sModel'] =  get_called_class();
-        return DB::one()->getCountAll($arParams, $arSysOptions);
+        return DB::I()->getCountAll($arParams, $arSysOptions);
     }
 
     public static function getMax($field,$arParams, $arSysOptions=array())
@@ -800,7 +1037,7 @@ class Model
         $arParams['iPageSize'] = 1;
         $arParams['iPage'] = 1;
         $sSql = DB::generateSelectSQL($arParams);
-        $st = DB::one()->query($sSql);
+        $st = DB::I()->query($sSql, ['nocache' => true]);
         $iResult = false;
         if ($st) {
             $arTmp = $st->fetch(PDO::FETCH_ASSOC);
@@ -817,7 +1054,7 @@ class Model
         $arParams['sModel'] =  get_called_class();
         $arParams['fields'] = 'min('. $field .') as cnt';
         $sSql = DB::generateSelectSQL($arParams);
-        $st = DB::one()->query($sSql);
+        $st = DB::I()->query($sSql, ['nocache' => true]);
         $iResult = false;
         if ($st) {
             $arTmp = $st->fetch(PDO::FETCH_ASSOC);
@@ -862,5 +1099,77 @@ class Model
         );
     }
 
+    public function setMaxValue($fieldname, $arParams, $step=1)
+    {
+        if (static::is($fieldname)) {
+            $table = static::getTable();
+            $idname = static::getIdName();
+            $arParams['fields'] =  '`'.$table.'`.`'.$fieldname.'`';
+            $arParams['sModel'] =  get_called_class();
+            $arParams['arSort'] = [$fieldname => 'desc'];
+
+            $sSql = DB::generateSelectSQL($arParams);
+
+            $addupdate = '';
+            if (static::is('servertime') && static::is('serverid')) {
+                $this->serverid = App::I()->serverid;
+                $this->servertime = (string)microtime(true);
+                $addupdate = ", t0.serverid='".App::I()->serverid."', t0.servertime='".$this->servertime."' ";
+            }
+
+            $sql = "UPDATE `" . static::getTable() . "` as t0, (" . $sSql . " LIMIT 1 FOR UPDATE) as t1 SET t0.`".$fieldname."` = t1.`".$fieldname."`+".intval($step). $addupdate . " WHERE `".$idname."` = '".$this->$idname."' ";
+
+            try {
+                $result = DB::I()->execute($sql);
+            } catch (PDOException $e) {
+                $result = false;
+                $state = $e->getMessage();
+                if (strpos($state, ' Deadlock found when trying to get lock; try restarting transaction') !== false) {
+                    $result = DB::I()->execute($sql);
+                } else {
+                    throw $e;
+                }
+            }
+            DB::clearInnerCache(get_called_class());
+
+            if ($result !== false) {
+                if ($result === 0) {
+                    $err = DB::I()->errorInfo();
+                    if ($err[0] != '00000') {
+                        echo "<div class='error'>" . $sql;
+                        var_dump($err);
+                        echo '</div>';
+                    }
+                }
+
+                $result = true;
+
+                $tmp = static::getRow(
+                    [
+                        'fields' => '`'.$table.'`.`'.$fieldname.'` ',
+                        'arFilter' => [
+                            $idname => ['=' => $this->$idname]
+                        ]
+                    ],['nocache' => true]
+                );
+                $this->$fieldname = $tmp->$fieldname;
+                $this->onChange(['fields' => [$fieldname]]);
+
+            } else {
+                $result = false;
+            }
+            return $result;
+        }
+        return false;
+    }
+
+    public function __toString()
+    {
+        return json_encode($this->__getFields(), JSON_UNESCAPED_UNICODE);
+    }
+
+    public function jsonSerialize() {
+        return $this->__getFields();
+    }
 }
 //end class

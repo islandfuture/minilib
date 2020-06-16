@@ -8,10 +8,13 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'class_only.php';
  * @author  Michael Akimov <michael@island-future.ru>
  * @version GIT: $Id$
  *
- * @example Application::one()->init(); // считываем данные из конфига и подготавливаем все для работы
+ * @example App::I()->init(); // считываем данные из конфига и подготавливаем все для работы
  */
-class Application extends Only
+class MiniLibCore extends Only
 {
+    // объект приложения
+    public static $app = null;
+
     //@var Array массив параметров конфигурации
     private $arConfig=array();
 
@@ -32,17 +35,17 @@ class Application extends Only
     protected $modules = array();
 
     /**
-     * Возвращает данные, сохраненные в Application::$arConfig в индексе $name
+     * Возвращает данные, сохраненные в App::$arConfig в индексе $name
      * @param string $name имя переменных
      *
      * @example
-     *  $superData = Application::one()->superData;
+     *  $superData = App::I()->superData;
      *
      * @return mixed
      */
     public function __get($name)
     {
-        if (empty($this->arConfig[$name])) {
+        if (! isset($this->arConfig[$name])) {
             return null;
         }
 
@@ -50,12 +53,12 @@ class Application extends Only
     }
 
     /**
-     * Сохраняем данные, в Application::$arConfig в индексе $name
+     * Сохраняем данные, в App::$arConfig в индексе $name
      * @param string $name имя индекса в arConfig, где сохраняются данные $val
      * @param mixed $val
      *
      * @example
-     *  Application::one()->superData = array('example' => true);
+     *  App::I()->superData = array('example' => true);
      *
      * @return mixed
      */
@@ -78,15 +81,14 @@ class Application extends Only
 
         /* DOCUMENT_ROOT must set to public directory */
         if (empty($_SERVER['DOCUMENT_ROOT'])) {
-            $_SERVER['DOCUMENT_ROOT'] = dirname(__DIR__);
+            $sPublicPath = $_SERVER['DOCUMENT_ROOT'] = dirname(dirname(__DIR__)).DIRECTORY_SEPARATOR.'public'.DIRECTORY_SEPARATOR;
         } else {
-            $_SERVER['DOCUMENT_ROOT'] = realpath($_SERVER['DOCUMENT_ROOT']);
+            $sPublicPath = $_SERVER['DOCUMENT_ROOT'] = realpath($_SERVER['DOCUMENT_ROOT']);
         }
 
-        $sPublicPath = $_SERVER['DOCUMENT_ROOT'].DIRECTORY_SEPARATOR;
-        $sAppPath = $_SERVER['DOCUMENT_ROOT'].DIRECTORY_SEPARATOR.'inc'.DIRECTORY_SEPARATOR;
-        $sVendorPath = $_SERVER['DOCUMENT_ROOT'].DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR;
-        $sConfig = $_SERVER['DOCUMENT_ROOT'].DIRECTORY_SEPARATOR.'inc'.DIRECTORY_SEPARATOR.'config.php';
+        $sAppCorePath = __DIR__.DIRECTORY_SEPARATOR;
+        $sRootPath = dirname($sPublicPath).DIRECTORY_SEPARATOR;
+        $sConfig = $sRootPath.'config'.DIRECTORY_SEPARATOR.'config.php';
 
         /* если нет конфига, то баста - ругаемся */
         if (! file_exists($sConfig)) {
@@ -106,16 +108,27 @@ class Application extends Only
             $this->arConfig['debug'] = 'N';
         }
 
+        $this->arConfig['PATH_ROOT'] = $sRootPath;
+        $this->arConfig['PATH_CORE'] = $sAppCorePath;
+        $this->arConfig['PATH_PUBLIC'] = $sPublicPath;
+
+        $sVendorPath = $sRootPath.'vendor'.DIRECTORY_SEPARATOR;
+        if (empty($this->arConfig['PATH_VENDOR'])) {
+            $this->arConfig['PATH_VENDOR'] = $sVendorPath;
+        }
+        $sAppPath = $sRootPath.'inc'.DIRECTORY_SEPARATOR;
+        if (empty($this->arConfig['PATH_APP'])) {
+            $this->arConfig['PATH_APP'] = $sAppPath;
+        }
+
+        $this->arConfig['PATH_TEMPLATE'] = $this->PATH_ROOT.'tpl'.DIRECTORY_SEPARATOR;
+        $this->arConfig['PATH_LAYOUR'] = $this->PATH_ROOT.'layout'.DIRECTORY_SEPARATOR;
+
         // регистрируем автозагрузчик классов
         spl_autoload_register(array($this, 'appAutoload' ), false);
 
         $this->startScript = date('Y-m-d H:i:s');
 
-        $this->arConfig['PATH_ROOT'] = $_SERVER['DOCUMENT_ROOT'].DIRECTORY_SEPARATOR;
-        $this->arConfig['PATH_APP'] = $sAppPath;
-        $this->arConfig['PATH_PAGES'] = $sPublicPath.'pages'.DIRECTORY_SEPARATOR;
-        $this->arConfig['PATH_PUBLIC'] = $sPublicPath;
-        $this->arConfig['PATH_VENDOR'] = $sVendorPath;
 
         /* глобальные переменные для хранения последних ошибок или сообщений */
         $this->arProperties['lasterror'] = '';
@@ -137,11 +150,12 @@ class Application extends Only
         if ($this->session && $this->session != 'none' && $this->session != 'auto') {
             /* Сессию можно соединить с классом отвечающим за юзеров */
             ActiveUser::$sUserClassName = $this->user > '' ? $this->user : 'none';
-            $session = ActiveUser::one();
+            $session = ActiveUser::I();
             if ($session->hasError()) {
                 throw new \Exception('Cannot start user session');
             }
         } elseif($this->session == 'auto') {
+            ActiveUser::$sUserClassName = 'none';
             session_start();
         }
 
@@ -157,15 +171,28 @@ class Application extends Only
         if (! isset( $this->arConfig['include'])) {
             $this->arConfig['include'] = array();
         }
+
         /* Проверяем, есть ли класс в массиве для автозагрузки классов */
         if( file_exists( $this->PATH_APP.'class_'.strtolower($sClassName).'.php') ) {
             include_once $this->PATH_APP.'class_'.strtolower($sClassName).'.php';
+            return true;
+        } elseif (file_exists( $this->PATH_CORE.'class_'.strtolower($sClassName).'.php') ) {
+            include_once $this->PATH_CORE.'class_'.strtolower($sClassName).'.php';
+            return true;
+        } elseif (file_exists( $this->PATH_APP.$sClassName.'.php') ) {
+            include_once $this->PATH_APP.$sClassName.'.php';
+            return true;
+        } elseif (strpos($sClassName,'\\') !== false && file_exists($this->PATH_APP . str_replace('\\', '/', $sClassName).'.php')) {
+            include_once $this->PATH_APP . str_replace('\\', '/', $sClassName) . '.php';
+            return true;
+        } elseif (strpos($sClassName,'/') !== false && file_exists($this->PATH_APP.$sClassName.'.php')) {
+            include_once $this->PATH_APP.$sClassName.'.php';
             return true;
         } elseif (array_key_exists($sClassName, $this->arConfig['include'])) {
             if (substr($this->arConfig['include'][ $sClassName ], 0, 1) == '/') {
                 $sPath = $this->arConfig['include'][ $sClassName ];
             } else {
-                $sPath = $this->PATH_APP.$this->arConfig['include'][ $sClassName ];
+                $sPath = $this->PATH_VENDOR.$this->arConfig['include'][ $sClassName ];
             }
 
             if (file_exists($sPath)) {
@@ -175,10 +202,7 @@ class Application extends Only
                 return;
                 // throw new \Exception('Class ['.$sClassName.'] not found in path ['.$sPath.']');
             }
-        } elseif (strpos($sClassName,'\\') !== false && file_exists($this->PATH_APP . str_replace('\\', '/', $sClassName).'.php')) {
-            include_once $this->PATH_APP . str_replace('\\', '/', $sClassName) . '.php';
-        } elseif (strpos($sClassName,'/') !== false && file_exists($this->PATH_APP.$sClassName.'.php')) {
-            include_once $this->PATH_APP.$sClassName.'.php';
+            return;
         } else {
             return ;
             //throw new \Exception('Class ['.$sClassName.'] not exists in include settings');
@@ -204,55 +228,76 @@ class Application extends Only
      */
     public function appException($e)
     {
-        $err  = $e->getMessage() . " = " . $e->getFile(). " = " . $e->getLine() . "\r\n" . $e->getTraceAsString() . "\r\n";
-        if (!empty(Application::one()->buglowers['to'])) {
+        $debugstr = $e->getTraceAsString();
+        $pos1 = strpos($debugstr, 'PDO->__construct(');
+        $pos2 = strpos($debugstr, ')', $pos1+5);
+        if ($pos1 > 0 && $pos2 > 0) {
+            $debugstr = str_replace(substr($debugstr,$pos1+17,$pos2-$pos1-17),'***', $debugstr);
+        }
+        $err  = $e->getMessage() . " = " . $e->getFile(). " = " . $e->getLine() . "\r\n" . $debugstr . "\r\n";
+        $this->log($err, 'error');
+        if (!empty(static::I()->buglowers['to'])) {
             $headers = 'From: no-reply';
-            @mail(Application::one()->buglowers['to'], 'Error Handler', $err, $headers);
+            @mail(static::I()->buglowers['to'], 'Error Handler', $err, $headers);
         }
 
         if ($e instanceof Http404) {
             header('HTTP/1.0 404 Not found');
-            if( Application::one()->output == 'json') {
+            if( static::I()->output == 'json') {
                 die(json_encode(array('error' => 'Document not found')));
-                return;
             } elseif (file_exists($_SERVER['DOCUMENT_ROOT'] . '/404.php')) {
                 include $_SERVER['DOCUMENT_ROOT'] . '/404.php';
-                return;
+                exit;
+            } else {
+                echo "Not found.";
+                exit;
             }
         }
 
         if ($e instanceof Http403) {
             header('HTTP/1.0 403 Forbidden');
-            if( Application::one()->output == 'json') {
+            if( static::I()->output == 'json') {
                 die(json_encode(array('error' => 'Access denied')));
                 return;
             } elseif (file_exists($_SERVER['DOCUMENT_ROOT'] . '/403.php')) {
                 include $_SERVER['DOCUMENT_ROOT'] . '/403.php';
-                //Application::one()->showPage('login', 'main');
+                //static::I()->showPage('login', 'main');
                 return;
             } else {
-                Application::one()->showPage('login', 'main');
+                static::I()->showPage('login', 'main');
             }
         }
 
-        if (Application::one()->debug == 'Y') {
-            if( Application::one()->output == 'json') {
-                die(json_encode(array('error' => "Error code " . $e->getCode() . ": ".$e->getMessage().' in line ['.$e->getLine().'] in file ['.$e->getFile().']'."\n", 'errortrace' => $e->getTraceAsString())));
+        if (static::I()->debug == 'Y') {
+            try {
+                ob_end_clean();
+            } catch(Exception $ee){
+            }
+
+            if( static::I()->output == 'json') {
+                die(json_encode(array('error' => "Error code " . $e->getCode() . ": ".$e->getMessage().' in line ['.$e->getLine().'] in file ['.$e->getFile().']'."\n", 'errortrace' => $debugstr)));
                 return;
             }
             echo "<pre>-----------------------------\n";
             echo "Error code " . $e->getCode() . ": ".$e->getMessage().' in line ['.$e->getLine().'] in file ['.$e->getFile().']'."\n";
-            echo $e->getTraceAsString();
+
+            echo $debugstr;
             echo "\n-----------------------------\n";
+            die();
         }
 
-        if( Application::one()->output == 'json') {
-            header('HTTP/1.0 500 Internal server error');
+        if( static::I()->output == 'json') {
+            header('HTTP/1.0 500 Internal server error', true);
             die(json_encode(array('error' => 'Unknown error')));
             return;
         }
 
-        die('<html><head><title>Error in '.Application::one()->web['name'].'</title><meta charset="utf-8" /><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head><body><table style="width:100%; height:100%;"><tr><td style="vertical-align: middle; text-align: center;"><h1>Произошло что-то страшное.</h1><p>Разработчикам уже сообщили и они трудятся боясь получить по шее.</p></td></tr></table></body></html>');
+        if (static::I()->errorpage5xx > '' && file_exists(static::I()->PATH_PUBLIC.static::I()->errorpage5xx)) {
+            header('HTTP/1.0 500 Internal server error', true);
+            echo file_get_contents(static::I()->PATH_PUBLIC.static::I()->errorpage5xx);
+            exit;
+        }
+        die('<html><head><title>Error in '.static::I()->web['name'].'</title><meta charset="utf-8" /><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head><body><table style="width:100%; height:100%;"><tr><td style="vertical-align: middle; text-align: center;"><h1>Temporary error</h1><p>Please reload page later.</p></td></tr></table></body></html>');
     }
     public static function appShutdown()
     {
@@ -270,9 +315,10 @@ class Application extends Only
         // Checking if last error is a fatal error
         if (($error['type'] === E_ERROR) || ($error['type'] === E_USER_ERROR)|| ($error['type'] === E_USER_NOTICE)) {
             $errstr = "ERROR: " . $error['type']. " |Msg : ".$error['message']." |File : ".$error['file']. " |Line : " . $error['line'];
+            $this->log($errstr, 'error');
 
-            if (Application::one()->debug == 'Y') {
-                if( Application::one()->output == 'json') {
+            if (static::I()->debug == 'Y') {
+                if( static::I()->output == 'json') {
                     die(json_encode(array('error' => $errstr)));
                     return;
                 }
@@ -281,13 +327,14 @@ class Application extends Only
                 echo "\n-----------------------------\n";
             }
 
-            if( Application::one()->output == 'json') {
+            if( static::I()->output == 'json') {
                 header('HTTP/1.0 500 Internal server error');
                 die(json_encode(array('error' => 'Unknown error')));
                 return;
             }
 
-            die('<html><head><title>Unknown Error</title><meta charset="utf-8" /><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head><body><table style="width:100%; height:100%;"><tr><td style="vertical-align: middle; text-align: center;"><h1>Произошло что-то страшное.</h1><p>Разработчикам уже сообщили и они трудятся боясь получить по шее.</p></td></tr></table></body></html>');
+            die('<html><head><title>Unknown error in '.static::I()->web['name'].'</title><meta charset="utf-8" /><meta http-equiv="Content-Type" content="text/html; charset=utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head><body><table style="width:100%; height:100%;"><tr><td style="vertical-align: middle; text-align: center;"><h1>Temporary error</h1><p>Please reload page later.</p></td></tr></table></body></html>');
+
 
         } else {
             //echo "no error where found " ;
@@ -299,10 +346,12 @@ class Application extends Only
      */
     protected function afterConstruct()
     {
+        MiniLibCore::$app = $this;
+
         if ($this->additionalConfigs > '' && is_array($this->additionalConfigs)) {
             foreach ($this->additionalConfigs as $fname) {
-                if (file_exists($this->PATH_ROOT.'configs'.DIRECTORY_SEPARATOR.$fname)) {
-                    $this->arConfig = $this->arConfig + include $this->PATH_ROOT.'configs'.DIRECTORY_SEPARATOR.$fname;
+                if (file_exists($this->PATH_APP.'configs'.DIRECTORY_SEPARATOR.$fname)) {
+                    $this->arConfig = $this->arConfig + include $this->PATH_APP.'configs'.DIRECTORY_SEPARATOR.$fname;
                      //= array_merge_recursive($this->arConfig, $arTmp);
                 }
             }
@@ -510,11 +559,23 @@ class Application extends Only
      */
     public function log($message, $file='log')
     {
-        $f = fopen($this->PATH_PUBLIC . 'uploads' . DIRECTORY_SEPARATOR . $file.'.txt', 'a');
+        $logname = '';
+        if (isset($this->web['shortcode'])) {
+            $file = $this->web['shortcode'].'-'.$file;
+        }
+        if ($this->logdir > '' && file_exists($this->PATH_APP.$this->logdir)) {
+            $logname = realpath($this->PATH_APP.$this->logdir) . DIRECTORY_SEPARATOR . $file;
+        } else {
+            if (! file_exists($this->PATH_PUBLIC . 'uploads' . DIRECTORY_SEPARATOR)) {
+                mkdir($this->PATH_PUBLIC . 'uploads' . DIRECTORY_SEPARATOR);
+            }
+            $logname = $this->PATH_PUBLIC . 'uploads' . DIRECTORY_SEPARATOR . $file;
+        }
+        $f = fopen($logname . '.txt', 'a');
         if ($f) {
             $user = '';
             //if (! $this->session || $this->sesion != 'none') {
-            //    $user = 'userid=' . ActiveUser::one()->id . ', ';
+            //    $user = 'userid=' . ActiveUser::I()->id . ', ';
             //}
             $ip = '-';
             if (! empty($_SERVER['REMOTE_ADDR'])) {

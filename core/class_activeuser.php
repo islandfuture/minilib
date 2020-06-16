@@ -15,15 +15,15 @@ class ActiveUser extends Only
 {
     // @var string в свойстве хранится название класса, которое отвечает за хранение данных юзера в БД
     public static $sUserClassName = 'ModelUsers';
-    
+
     // @var \Data\Model клас отвечающий за данные о пользователе
     protected $oCurrentUser = null;
 
     // @var boolean равен true, если загружали данные из БД в сессию
     protected $isSynchronized = false;
-    
+
     protected $hasError = false;
-    
+
     public function hasError()
     {
         return $this->hasError;
@@ -37,7 +37,7 @@ class ActiveUser extends Only
 
         return $_SESSION['MINILIB_USER'][$sName];
     }
-    
+
     public function __set($sName, $sVal)
     {
         if (empty($_SESSION['MINILIB_USER'])) {
@@ -52,16 +52,18 @@ class ActiveUser extends Only
             static::$sUserClassName = $arParams['sModel'];
         }
 
-        $this->hasError = (! @session_start());
-        if ($this->hasError) {
-            session_regenerate_id(true); // replace the Session ID
-            $this->hasError = session_start();
+        if (session_status()!=PHP_SESSION_ACTIVE) {
+            $this->hasError = (! @session_start());
+            if ($this->hasError) {
+                session_regenerate_id(true); // replace the Session ID
+                $this->hasError = session_start();
+            }
         }
 
         if (empty($_SESSION['MINILIB_USER'])) {
             $_SESSION['MINILIB_USER'] = array();
         }
-        
+
         if (static::$sUserClassName != 'none') {
             $className = static::$sUserClassName;
 
@@ -81,12 +83,12 @@ class ActiveUser extends Only
             }
 
         } else {
-            $this->oCurrentUser = new \stdClass();
+            //$this->oCurrentUser = new \stdClass();
             $this->oCurrentUser = $_SESSION['MINILIB_USER'];
         }
         return true;
     }
-    
+
     /**
      * Функция возвращает объект с данными текущего юзера, при необходимости берет из БД
      */
@@ -128,7 +130,7 @@ class ActiveUser extends Only
         foreach ($arParams as $key => $val) {
             $this->__set($key, $val);
         }
-        
+
         if (static::$sUserClassName != 'none') {
             $this->oCurrentUser->attributes($_SESSION['MINILIB_USER']);
             if ($rememberDay > 0 ) {
@@ -150,10 +152,14 @@ class ActiveUser extends Only
             $this->oCurrentUser = new \stdClass();
         }
         $_SESSION = array();
+
+        //уничтожаем сессию
+    	setcookie(session_name(), session_id(), time()-60*60*24, "/", "", true, true);
+    	session_unset();
         session_destroy();
-        session_regenerate_id ();
+        //session_regenerate_id ();
     }
-    
+
     /**
      * Проверяем доступ на просмотр страницы $sPage
      * @return boolean true - если доступ есть
@@ -185,7 +191,7 @@ class ActiveUser extends Only
                         $isResult = true;
                         break 2;
                     }
-                    
+
                     if (($iRoleId && $iGroup) == $iGroup) {
                         $isResult = ($sGrant == 'allow' ? true : false);
                         break 2;
@@ -201,7 +207,7 @@ class ActiveUser extends Only
                 } else {
                     $sPage = substr($sPage,0,$iPos+1);
                 }
-                
+
             }
             $iStop--;
         } while($sPage > '' && $iStop > 0);
@@ -209,7 +215,7 @@ class ActiveUser extends Only
         if ($isResult === false) {
             throw new \Exceptions\Http403();
         }
-        
+
         return $isResult;
     }
 
@@ -217,13 +223,13 @@ class ActiveUser extends Only
     {
         return ($this->globalMessage > '');
     }
-    
+
     public function showMessage()
     {
         echo $this->globalMessage;
         $this->globalMessage = '';
     }
-    
+
     /**
      * добавляем в сессию данные о событии которое нужно отправить в гугланалитик
      *
@@ -252,7 +258,7 @@ class ActiveUser extends Only
         } else {
             $result = "";
         }
-        
+
         return $result;
     }
 }
