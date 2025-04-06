@@ -1,0 +1,25 @@
+{
+    "name": "islandfuture/minilib",
+    "description": "Mini Lib PHP framework (Island Future)",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+        "IFMiniLib\\": "src/IFMiniLib/"
+        }
+    },
+    "require": {
+        "php": "^8.1"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "IFMiniLib\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}
