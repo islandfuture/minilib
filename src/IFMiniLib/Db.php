@@ -1,6 +1,8 @@
 <?php
+namespace IFMiniLib;
+
 use \PDO as PDO;
-use \Only as Only;
+use \IFMiniLib\Only as Only;
 
 /**
  * Класс для работы с хранилищами данных
@@ -12,57 +14,57 @@ use \Only as Only;
 
 class DB extends Only
 {
-
+    public static $debugQuery = '';
     /**
      * @var array кеш для хранения запросов во время выполнения скрипта
      **/
-    protected static $arCaches=array();
+    protected static $caches=array();
 
     /**
      * @var array кеш для хранения запросов к конкретным таблицам (позволяет не выполнять одинаковые запросы к БД)
      **/
-    protected static $arCacheTables = array();
+    protected static $cacheTables = array();
 
     /**
      * @var boolean параметр на будущее, для работы с мемкешем
      **/
-    protected $bEnableCache = false;
+    protected $enableCache = false;
 
     /**
      * @var Array of PDO statement
      **/
-    private $arPools = array();
-    
+    private $pools = array();
+
     /**
      * @var string название текущей БД
      */
-    private static $sCurKey = 'default';
+    private static $curKey = 'default';
 
     /**
      * ошибки, которые  произошли просто так или с каким-то объектом
      * массив состоит из моделей/полей или общей модели/блоков
      * Общая модель называется '_' (1-й уровень массива), у каждой модели есть счетчик ошибок ierr
      */
-    protected static $arErrors = array();
+    protected static $errors = array();
 
     /**
      *  Создает модель данных (класс, который является проекцией какой-то таблицы)
      *
      *  @return Model
      */
-    public static function model($sClassName,$arParams=null)
+    public static function model($className,$arParams=null)
     {
         if ($arParams) {
-            return new $sClassName($arParams);
+            return new $className($arParams);
         } else {
-            return new $sClassName;
+            return new $className;
         }
 
     }
 
     /**
      * Метод генерит блок WHERE для запроса
-     * 
+     *
      * @param array $arParams
      * @return string условие для WHERE
      */
@@ -72,22 +74,22 @@ class DB extends Only
         if (empty($arParams['sModel'])) {
             throw new \Exception('Class of model not defined');
         }
-        
-        $sClassName = $arParams['sModel'];
-        $sTableName = $sClassName::getTable(); // название таблицы
-        $arFields    = $sClassName::getClearFields(); // название полей таблицы
+
+        $className = $arParams['sModel'];
+        $sTableName = $className::getTable(); // название таблицы
+        $arFields    = $className::getClearFields(); // название полей таблицы
 
         $sWhere        = '1=1';
         $arRelations    = null;
-        
+
         /*
          * Выставляем базу и таблицу для запроса
          */
         if (!empty($arParams['sDatabase'] )) {
             $table = '`' . $arParams['sDatabase'] . '`.`' . $sTableName . '`';
         }
-        elseif ($sClassName::getDatabase() > '') {
-            $table = '`' . $sClassName::getDatabase() . '`.`' . $sTableName . '`';
+        elseif ($className::getDatabase() > '') {
+            $table = '`' . $className::getDatabase() . '`.`' . $sTableName . '`';
         }
         else
         {
@@ -115,14 +117,18 @@ class DB extends Only
                             );
                      */
                     foreach($value as $op => $val ) {
-                        
+
                         $op = strtolower($op);
                         if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields']) ) {
                             $sKey = "AES_DECRYPT($table.`$key`,UNHEX('".$arParams['securesecret']."'))";
                         } else {
-                            $sKey = $table.".`$key`";
+                            if (! empty($arParams['collate'])) {
+                                $sKey = $table.".`$key` collate ".$arParams['collate'];
+                            } else {
+                                $sKey = $table.".`$key`";
+                            }
                         }
-                        
+
                         switch($op ) {
                         case 'not like':
                         case 'like':
@@ -159,9 +165,9 @@ class DB extends Only
                         case 'not in':
                         case 'in':
                             /*
-                              if ( !is_array($val) && strpos($val,',')>0 ){
-                              $val = explode(',',$val);
-                              }
+                                if ( !is_array($val) && strpos($val,',')>0 ){
+                                $val = explode(',',$val);
+                                }
                              */
                             if (is_array($val)) {
                                 foreach($val AS &$value )
@@ -208,7 +214,7 @@ class DB extends Only
                         } else {
                             $sKey = $table.".`$key`";
                         }
-                        
+
                         $sWhere .= " AND $sKey='" . addslashes($value) . "'";
                     }
                 }
@@ -216,7 +222,7 @@ class DB extends Only
             else
             {
                 if (!$arRelations) {
-                    $arRelations = $sClassName::getRelations();
+                    $arRelations = $className::getRelations();
                 }
 
                 if (isset($arRelations[$key] )) {
@@ -224,7 +230,7 @@ class DB extends Only
                     $classname     = $rel[3];
 
                     if ($rel[0] == '::table::') {
-                        
+
                         $sWhere .= ' AND '. $rel[2] .' IN ('.static::generateSelectSQL(
                             array(
                                 'sModel' => $classname,
@@ -233,9 +239,9 @@ class DB extends Only
                                 'arFilter'=> $value
                             )
                         ).')';
-             
+
                     }
-                    
+
                 }
                 elseif ($key == ':sql:') {
                     /**
@@ -247,6 +253,12 @@ class DB extends Only
                             );
                      */
                     $sWhere .= ' AND ' . $value;
+                } else {
+                    if (strpos($key, '(') !== false && strpos($key, ' as ') !== false) {
+                        /** можно проверить что за функция */
+                    } else {
+                        throw new \Exception("Unknown key [".$key."] in Model");
+                    }
                 }
             }
         }
@@ -264,17 +276,17 @@ class DB extends Only
             $arParams['arFilter'] = array();
         }
 
-        $sClassName = $arParams['sModel'];
+        $className = $arParams['sModel'];
 
         /*
          * Выставляем базу и таблицу для запроса
          */
         if (!empty($arParams['sDatabase'] )) {
-            $table = '`' . $arParams['sDatabase'] . '`.`' . $sClassName::getTable() . '`';
-        } elseif ($sClassName::getDatabase() > '') {
-            $table = '`' . $sClassName::getDatabase() . '`.`' . $sClassName::getTable() . '`';
+            $table = '`' . $arParams['sDatabase'] . '`.`' . $className::getTable() . '`';
+        } elseif ($className::getDatabase() > '') {
+            $table = '`' . $className::getDatabase() . '`.`' . $className::getTable() . '`';
         } else {
-            $table = '`' . $sClassName::getTable() . '`';
+            $table = '`' . $className::getTable() . '`';
         }
 
         $sWhere = static::generateWhereSQL($arParams);
@@ -308,8 +320,12 @@ class DB extends Only
                     $from_add .= ', `' . $t . '` as t' . $i . ' ';
                 }
             }
+        } elseif (!empty($arParams['ignoreindex']) && is_string($arParams['ignoreindex'])) {
+            $from_add .= ' IGNORE INDEX (' . $arParams['ignoreindex'] . ') ';
+        } elseif (!empty($arParams['useindex']) && is_string($arParams['useindex'])) {
+            $from_add .= ' USE INDEX (' . $arParams['useindex'] . ') ';
         }
-        
+
         return 'SELECT COUNT(*) as cnt FROM ' . $table . ' ' . $from_add . ' WHERE ' . $sWhere;
     }
 
@@ -323,18 +339,18 @@ class DB extends Only
         if (empty($arParams['sModel'])) {
             throw new \Exception('Class of model not defined');
         }
-        
-        $sClassName = $arParams['sModel'];
-        $sTableName = $sClassName::getTable();
-        $arFields     = $sClassName::getClearFields();
+
+        $className = $arParams['sModel'];
+        $sTableName = $className::getTable();
+        $arFields     = $className::getClearFields();
 
         /*
          * Выставляем базу и таблицу для запроса
          */
         if (!empty($arParams['sDatabase'] )) {
             $table = '`' . $arParams['sDatabase'] . '`.`' . $sTableName . '`';
-        } elseif ($sClassName::getDatabase() > '') {
-            $table = '`' . $sClassName::getDatabase() . '`.`' . $sTableName . '`';
+        } elseif ($className::getDatabase() > '') {
+            $table = '`' . $className::getDatabase() . '`.`' . $sTableName . '`';
         } else {
             $table = '`' . $sTableName . '`';
         }
@@ -416,7 +432,12 @@ class DB extends Only
                     $from_add .= ', `' . $t . '` as t' . $i;
                 }
             }
+        } elseif (!empty($arParams['ignoreindex']) && is_string($arParams['ignoreindex'])) {
+            $from_add .= ' IGNORE INDEX (' . $arParams['ignoreindex'] . ') ';
+        } elseif (!empty($arParams['useindex']) && is_string($arParams['useindex'])) {
+            $from_add .= ' USE INDEX (' . $arParams['useindex'] . ') ';
         }
+
         $orders = '';
         if (!empty($arParams['arSort'] )) {
             $orders = array();
@@ -424,7 +445,7 @@ class DB extends Only
             {
                 $orders[] = '`' . $by . '` ' . $order;
             }
-            if (sizeof($order) > 0) {
+            if (sizeof($orders) > 0) {
                 $orders = 'ORDER BY ' . implode(',', $orders);
             }
             else
@@ -436,7 +457,7 @@ class DB extends Only
         return 'SELECT ' . $select . ' FROM ' . $table . $from_add . ' WHERE ' . $sWhere . ' ' . $orders . $limit;
     }
 
-    
+
     /**
      * Функция возвращает массив объектов определнного класса
      * Если присутсвует параметр $arSysOptions[index] - отдаем индексированный массив
@@ -446,7 +467,7 @@ class DB extends Only
      * @return Array
      *
      * @example возвращает первые 20 записей сделанные в блоге после 1 января 2015 года по убыванию
-     * DB::one()->getAll(array
+     * DB::I()->getAll(array
      *      'sModel'=>'Blogs',
      *      'arFilter' => array(
      *          'tCreated' => array('>' => '2015-01-01')
@@ -456,7 +477,7 @@ class DB extends Only
      *      )
      *      'iPageSize' => 30,
      *      'iPage' => 1
-     *      
+     *
      * ));
      */
     public static function getAll($arParametrs = array(), $arSysOptions = array())
@@ -470,12 +491,12 @@ class DB extends Only
         if (! empty($arSysOptions['index'])) {
             $sKeyCache .= 'idx';
         }
-        
+
         /* узнаем название класса модели */
-        $sClassName = $arParametrs['sModel'];
+        $className = $arParametrs['sModel'];
         $arResult = array();
-        
-        if (empty( static::$arCacheTables[$sClassName][$sKeyCache] )
+
+        if (empty( static::$cacheTables[$className][$sKeyCache] )
             || (isset($arSysOptions['nocache'] ) && $arSysOptions['nocache'])
         ) {
             if (empty($arParametrs["iPageSize"])) {
@@ -497,39 +518,47 @@ class DB extends Only
             if (! empty($arSysOptions['debug'])) {
                 echo '[[[' . $sSql . ']]]';
             }
-            $st = DB::one()->getStorage()->query($sSql, PDO::FETCH_CLASS, $sClassName, array(DB::one()));
+            $st = DB::I()->getStorage()->query($sSql, PDO::FETCH_CLASS, $className, array(DB::I()));
 
             if ($st) {
                 $arResult = $st->fetchAll();
 
-                if (!empty($arSysOptions['index'] )) {
-                    $idName     = $sClassName::getIdName();
+                if (! empty($arSysOptions['index'] )) {
+                    $idName     = $className::getIdName();
                     $arTmp = array();
                     foreach($arResult as $obTmp )
                     {
+                        if (! empty($arParametrs['fields'])) {
+                            $obTmp->readOnly = true;
+                        }
                         $arTmp[ $obTmp->{$idName} ] = $obTmp;
                     }
                     $arResult = array();
-                    $arResult = & $arTmp; 
+                    $arResult = & $arTmp;
+                } elseif (! empty($arParametrs['fields'])) {
+                    foreach($arResult as $idx => $obTmp )
+                    {
+                        $arResult[$idx]->readOnle = true;
+                    }
                 }
             }
 
-            if (empty(static::$arCacheTables[$sClassName])) {
-                static::$arCacheTables[$sClassName] = array();
+            if (empty(static::$cacheTables[$className])) {
+                static::$cacheTables[$className] = array();
             }
 
-            static::$arCacheTables[$sClassName][$sKeyCache] = & $arResult;
+            static::$cacheTables[$className][$sKeyCache] = & $arResult;
         }//end if self::$_cache
 
-        return static::$arCacheTables[$sClassName][$sKeyCache];
+        return static::$cacheTables[$className][$sKeyCache];
     }
 
     /**
      * Возвращает количество найденных записей
-     * 
+     *
      * @param array $arParametrs  данные для запроса
      * @param array $arSysOptions Дополнительные условия по отбору объекта
-     * 
+     *
      * @return integer
      **/
     public static function getCountAll($arParametrs = array(), $arSysOptions = array() )
@@ -554,13 +583,13 @@ class DB extends Only
         }
 
         $sKeyCache = md5(serialize($arParametrs));
-        
+
         /* узнаем название класса модели */
-        $sClassName = $arParametrs['sModel'];
+        $className = $arParametrs['sModel'];
         $iResult = 0;
-        
+
         if
-        (empty( static::$arCacheTables[$sClassName][$sKeyCache] )
+        (empty( static::$cacheTables[$className][$sKeyCache] )
             || (isset($arSysOptions['nocache'] ) && $arSysOptions['nocache'])
         ) {
 
@@ -571,42 +600,41 @@ class DB extends Only
 
             /* Отправляем запрос к базе */
             if (!empty($arSysOptions['debug'] )) {
-                echo '[[[' . $sSql . ']]]';
-                Application::one()->log('Get count: '.$sSql);
+                static::$debugQuery = $sSql;
             }
-            $st = DB::one()->getStorage()->query($sSql);
+            $st = DB::I()->getStorage()->query($sSql);
 
             if ($st) {
                 $arTmp = $st->fetch(PDO::FETCH_ASSOC);
                 if (isset($arTmp['cnt'])) {
                     $iResult=$arTmp['cnt'];
                 }
-        
+
             }
 
-            if (empty(static::$arCacheTables[$sClassName])) {
-                static::$arCacheTables[$sClassName] = array();
+            if (empty(static::$cacheTables[$className])) {
+                static::$cacheTables[$className] = array();
             }
 
-            static::$arCacheTables[$sClassName][$sKeyCache] = $iResult;
+            static::$cacheTables[$className][$sKeyCache] = $iResult;
         }//end if self::$_cache
 
-        return static::$arCacheTables[$sClassName][$sKeyCache];
+        return static::$cacheTables[$className][$sKeyCache];
     }
-    
+
     /**
      * Возвращает объект связанный с таблицей
-     * 
+     *
      * @param array $arParametrs  данные для запроса
      * @param array $arSysOptions Дополнительные условия по отбору объекта
-     * 
+     *
      * @return Model
      **/
     public static function getOne($arParametrs = array(), $arSysOptions = array() )
     {
         $arParametrs['iPage'] = 1;
         $arParametrs['iPageSize'] = 1;
-        
+
         $rows = static::getAll($arParametrs, $arSysOptions);
 
         $obj = null;
@@ -616,10 +644,10 @@ class DB extends Only
 
         return $obj;
     }
-    
+
     /**
      * Удаляет записи
-     * 
+     *
      * @param array $arParametrs  данные для запроса
      **/
     public static function deleteAll($arParametrs=array() )
@@ -627,28 +655,28 @@ class DB extends Only
         if (empty($arParametrs['sModel'])) {
             throw new \Exception('Cannot define class for Model');
         }
-        
+
         /* узнаем название класса модели */
-        $sClassName = $arParametrs['sModel'];
+        $className = $arParametrs['sModel'];
 
         /*
          * Выставляем базу и таблицу для запроса
          */
         if (! empty($arParametrs['sDatabase'] )) {
-            $sTable = '`'.$arParametrs['sDatabase'].'`.`'.$sClassName::getTable().'`';
-        } elseif ($sClassName::getDatabase() > '') {
-            $sTable = '`'.$sClassName::getDatabase().'`.`'.$sClassName::getTable().'`';
+            $sTable = '`'.$arParametrs['sDatabase'].'`.`'.$className::getTable().'`';
+        } elseif ($className::getDatabase() > '') {
+            $sTable = '`'.$className::getDatabase().'`.`'.$className::getTable().'`';
         } else {
-            $sTable = '`'.$sClassName::getTable().'`';
+            $sTable = '`'.$className::getTable().'`';
         }
 
         $sWhere     = static::generateWhereSQL($arParametrs);
         $sql     = "DELETE FROM " . $sTable . " WHERE " . $sWhere;
-        $result     = static::one()->execute($sql);
+        $result     = static::I()->execute($sql);
 
         if (false !== $result) {
             if (0 === $result) {
-                $err = static::one()->errorInfo();
+                $err = static::I()->errorInfo();
                 if ('00000' != $err[0]) {
                     echo "<div class='error'>" . $sql;
                     echo ($err);
@@ -657,37 +685,37 @@ class DB extends Only
             }//end if
         }//end if
 
-        static::clearInnerCache($sClassName);
-        
+        static::clearInnerCache($className);
+
         return $result;
     }
 
-    
+
     /**
      * Добавляем ошибку
      * @param string $sError      текст ошибки
-     * @param string $sClassNamel название класса модели в котором произошла ошибка ("_" - означает общая ошибка)
+     * @param string $classNamel название класса модели в котором произошла ошибка ("_" - означает общая ошибка)
      * @param string $sField      название поля в котором обнаружена ошибка
      */
-    public static function addError($sError, $sClassName = '_', $sField = '_')
+    public static function addError($sError, $className = '_', $sField = '_')
     {
-        if (empty(static::$arErrors[$sClassName])) {
-            static::$arErrors[$sClassName] = array();
+        if (empty(static::$errors[$className])) {
+            static::$errors[$className] = array();
         }//end if
 
-        if (empty(static::$arErrors[$sClassName][$sField])) {
-            static::$arErrors[$sClassName][$sField] = array();
+        if (empty(static::$errors[$className][$sField])) {
+            static::$errors[$className][$sField] = array();
         }
-        static::$arErrors[$sClassName][$sField][] = $sError;
+        static::$errors[$className][$sField][] = $sError;
     }//end function
-    
+
     // возвращает TRUE если в модели и поля есть ошибки
-    public static function isError($sClassName = '_', $sField = '_') 
+    public static function isError($className = '_', $sField = '_')
     {
-        if (isset(static::$arErrors) && isset(static::$arErrors[$sClassName])) {
-            if (isset(static::$arErrors[$sClassName][$sField]) && sizeof(static::$arErrors[$sClassName][$sField]) > 0) {
+        if (isset(static::$errors) && isset(static::$errors[$className])) {
+            if (isset(static::$errors[$className][$sField]) && sizeof(static::$errors[$className][$sField]) > 0) {
                 return true;
-            } elseif ($sField == '*' && sizeof(static::$arErrors[$sClassName]) > 0) {
+            } elseif ($sField == '*' && sizeof(static::$errors[$className]) > 0) {
                 return true;
             }
         }
@@ -695,92 +723,89 @@ class DB extends Only
     }
 
     /**
-     * Функция проверяет есть ли ошибки в модели с названием $sClassName, или вообще, есть ли ошибки ($sClassName == '')
+     * Функция проверяет есть ли ошибки в модели с названием $className, или вообще, есть ли ошибки ($className == '')
      *
-     * @param string $sClassName название класса модели в которой проверяем наличие ошибок
-     * 
+     * @param string $className название класса модели в которой проверяем наличие ошибок
+     *
      * @return boolean
      */
-    public static function isErrors($sClassName = '') 
+    public static function isErrors($className = '')
     {
-        if ($sClassName == '') {
-            return (sizeof(static::$arErrors) > 0);
-        } else {
-            if (isset(static::$arErrors[$sClassName]) && sizeof(static::$arErrors[$sClassName]) > 0) {
+        if ($className == '') {
+            return (sizeof(static::$errors) > 0);
+        } elseif (isset(static::$errors[$className]) && sizeof(static::$errors[$className]) > 0) {
                 return true;
-            } else {
-                return false;
-            }
         }
+        return false;
     }//end function
-    
+
     /**
      * Функция возвращает массив из текстов ошибок для поля указанного класса
      *
-     * @return array 
+     * @return array
      */
-    public static function getError($sClassName = '_', $sField = '_', $isClear = true) 
+    public static function getError($className = '_', $sField = '_', $isClear = true)
     {
-        if (isset(static::$arErrors[$sClassName])
-            && isset(static::$arErrors[$sClassName][$sField])
+        if (isset(static::$errors[$className])
+            && isset(static::$errors[$className][$sField])
         ) {
-            $e = static::$arErrors[$sClassName][$sField];
-            
+            $e = static::$errors[$className][$sField];
+
             if ($isClear) {
-                static::clearError($sClassName, $sField);
+                static::clearError($className, $sField);
             }
-            
+
             return $e;
         } else {
             return false;
         }
     }//end function
 
-    // @todo доделать 
-    public static function getErrors($sClassName='_', $isClear=false) 
+    // @todo доделать
+    public static function getErrors($className='_', $isClear=false)
     {
-        if ($sClassName == '') {
-            $e = static::$arErrors;
-        } elseif (isset(static::$arErrors[$sClassName])) {
-            $e = static::$arErrors[$sClassName];
+        if ($className == '') {
+            $e = static::$errors;
+        } elseif (isset(static::$errors[$className])) {
+            $e = static::$errors[$className];
         } else {
             $e = false;
             $isClear = false;
         }
-        
+
         if ($isClear) {
-            static::clearErrors($sClassName);
+            static::clearErrors($className);
         }
         return $e;
     }//end function
 
-    // стираем ошибку 
-    public function clearError($sClassName = '_', $sField = '_') 
+    // стираем ошибку
+    public function clearError($className = '_', $sField = '_')
     {
-        if (isset(static::$arErrors[$sClassName]) && isset(static::$arErrors[$sClassName][$sField])) {
-            static::$arErrors[$sClassName][$sField] = null;
-            unset(static::$arErrors[$sClassName][$sField]);
-    
-            if (sizeof(static::$arErrors[$sClassName]) == 0) {
-                unset(static::$arErrors[$sClassName]);
-            }
-        }        
+        if (isset(static::$errors[$className]) && isset(static::$errors[$className][$sField])) {
+            static::$errors[$className][$sField] = null;
+            unset(static::$errors[$className][$sField]);
 
-        if (sizeof(static::$arErrors) == 0) {
-            static::$arErrors = array(); 
+            if (sizeof(static::$errors[$className]) == 0) {
+                unset(static::$errors[$className]);
+            }
+        }
+
+        if (sizeof(static::$errors) == 0) {
+            static::$errors = array();
         }
     }//end function
 
     // стираем ошибки, если указана модель, то стираем ошибки, только указанной модели
-    public function clearErrors($sClassName = '_') 
+    public function clearErrors($className = '_')
     {
-        if ($sClassName == '') {
-            static::$arErrors = array(); 
-        } elseif (isset(static::$arErrors[$sClassName])) {
-            unset(static::$arErrors[$sClassName]);
+        if ($className == '') {
+            static::$errors = array();
+        } elseif (isset(static::$errors[$className])) {
+            unset(static::$errors[$className]);
 
-            if (sizeof(static::$arErrors) == 0) {
-                static::$arErrors = array(); 
+            if (sizeof(static::$errors) == 0) {
+                static::$errors = array();
             }
         }
 
@@ -792,16 +817,16 @@ class DB extends Only
      */
     public function isConnected()
     {
-        return is_object(DB::one()->getStorage());
+        return is_object(DB::I()->getStorage());
     }
-    
+
     /**
      * Функция начинает транзакцию
      * @return bool возвращет TRUE если успех и FALSE если не успех
      */
     public function begin()
     {
-        return DB::one()->getStorage()->beginTransaction();
+        return DB::I()->getStorage()->beginTransaction();
     }
 
     /**
@@ -810,7 +835,7 @@ class DB extends Only
      */
     public function commit()
     {
-        return DB::one()->getStorage()->commit();
+        return DB::I()->getStorage()->commit();
     }
 
     /**
@@ -819,25 +844,25 @@ class DB extends Only
      */
     public function rollback()
     {
-        return DB::one()->getStorage()->rollBack();
+        return DB::I()->getStorage()->rollBack();
     }
-    
+
     /**
      * Так как все результаты запросов кешируются на время выполнения скрипта иногда кеш нужно очищать
      * (особенно если идет обработка большого объема данных)
-     * @param string $sClassName название модели, чтобы стереть только кеш касающийся этой модели
+     * @param string $className название модели, чтобы стереть только кеш касающийся этой модели
      */
-    public static function clearInnerCache($sClassName = '')
+    public static function clearInnerCache($className = '')
     {
-        if ($sClassName == '') {
+        if ($className == '') {
             static::$arCaches = array();
         }
-        elseif (isset(static::$arCacheTables[$sClassName])) {
-            static::$arCacheTables[$sClassName] = array();
+        elseif (isset(static::$cacheTables[$className])) {
+            static::$cacheTables[$className] = array();
         }
-        elseif ($sClassName == ':all:') {
-            static::$arCacheTables = array();
-            static::$arCaches = array();
+        elseif ($className == ':all:') {
+            static::$cacheTables = array();
+            static::$caches = array();
         }
     }
 
@@ -848,48 +873,44 @@ class DB extends Only
     **/
     public function addStorage($key, $arDBConfig)
     {
-        if (isset($this->arPools[$key])) {
+        if (isset($this->pools[$key])) {
             throw new \Exception("already have '{$key}' link db");
         }
-        
-        $arDBPoolConfig = Application::one()->dbpool;
+
+        $arDBPoolConfig = MiniLibCore::$app->dbpool;
         if ($arDBPoolConfig == null) {
             $arDBPoolConfig = array();
         }
         $arDBPoolConfig[ $key ] = $arDBConfig;
-        Application::one()->dbpool = $arDBPoolConfig;
+        MiniLibCore::$app->dbpool = $arDBPoolConfig;
 
-        static::$sCurKey = $key;
+        static::$curKey = $key;
         return $this;
     }
-    
-    public function disconnect($sKey='') 
+
+    public function disconnect($sKey='')
     {
-        if ($sKey > '') { 
-            static::$sCurKey = $sKey;
+        if ($sKey > '') {
+            static::$curKey = $sKey;
         }
 
-        if (empty($this->arPools[static::$sCurKey])) {
-            throw new \Exception("already disconnected '{static::$sCurKey}' link db");
-        }
-        
-        $this->arPools[static::$sCurKey] = null;
+        $this->pools[static::$curKey] = null;
     }
-    
+
     /**
      * Функция возвращает класс для работы с хранилищем
-     * @return class 
+     * @return class
      */
-    private function getStorage($sKey = '') 
+    private function getStorage($sKey = '')
     {
-        if ($sKey > '') { 
-            static::$sCurKey = $sKey;
+        if ($sKey > '') {
+            static::$curKey = $sKey;
         }
-        
-        if (empty($this->arPools[static::$sCurKey])) {
-            $arDBPoolConfig = Application::one()->dbpool;
-            if (empty($arDBPoolConfig[static::$sCurKey])) {
-                throw new \Exception('Cannot read config for initialize DB {' . static::$sCurKey . '}');
+
+        if (empty($this->pools[static::$curKey])) {
+            $arDBPoolConfig = MiniLibCore::$app->dbpool;
+            if (empty($arDBPoolConfig[static::$curKey])) {
+                throw new \Exception('Cannot read config for initialize DB {' . static::$curKey . '}');
             }
 
             $arPdoOptions = array(
@@ -898,25 +919,25 @@ class DB extends Only
                 //PDO::MYSQL_ATTR_MAX_BUFFER_SIZE => 4*1024*1024
             );
 
-            $this->arPools[static::$sCurKey] =  new PDO(
-                $arDBPoolConfig[static::$sCurKey]['dsn'],
-                $arDBPoolConfig[static::$sCurKey]['user'],
-                $arDBPoolConfig[static::$sCurKey]['password'],
+            $this->pools[static::$curKey] =  new PDO(
+                $arDBPoolConfig[static::$curKey]['dsn'],
+                $arDBPoolConfig[static::$curKey]['user'],
+                $arDBPoolConfig[static::$curKey]['password'],
                 $arPdoOptions
             );
-            
-            $this->arPools[static::$sCurKey]->exec("SET NAMES 'utf8'");
+
+            $this->pools[static::$curKey]->exec("SET NAMES 'utf8'");
         }
-        
-        return $this->arPools[static::$sCurKey];
+
+        return $this->pools[static::$curKey];
     }
-    
-    public function setKey($sKey='') 
+
+    public function setKey($sKey='')
     {
-        if ($sKey > '') { 
-            static::$sCurKey = $sKey;
+        if ($sKey > '') {
+            static::$curKey = $sKey;
         } else {
-            static::$sCurKey = 'default';
+            static::$curKey = 'default';
         }
         return $this;
     }
@@ -924,22 +945,26 @@ class DB extends Only
     /**
      * создется объект, для работы с БД. Данные для соединения берутся из класса SFW_Config->dbpool
      */
-    public function __construct() 
+    public function __construct()
     {
-        $arCacheConfig = Application::one()->cache;
-        if ($arCacheConfig && isset($arCacheConfig['enable']) && $arCacheConfig['enable'] == 'on') {
-            $this->bEnableCache = true;
+        $cacheConfig = MiniLibCore::$app->cache;
+        if (
+            $cacheConfig 
+            && isset($cacheConfig['enable']) 
+            && $cacheConfig['enable'] == 'on'
+        ) {
+            $this->enableCache = true;
             /* @todo add code for init cache classes */
         }
-        
-        static::$arErrors = array(
+
+        static::$errors = array(
             'commons'=>array()
         );
     }//end function
-    
+
 
     /**
-     * Функция выполняет SQL-запрос к БД и 
+     * Функция выполняет SQL-запрос к БД и
      * @param string $sSql
      * @param array  $arSysOptions
      * @return class pdo_statement
@@ -949,21 +974,21 @@ class DB extends Only
         /* формируем ключ для кеширования запроса */
         $sCacheKey = hash('md5', $sSql);
 
-        if (!empty($arSysOptions['nocache']) || empty(static::$arCaches[$sCacheKey] )) {
+        if (!empty($arSysOptions['nocache']) || empty(static::$caches[$sCacheKey] )) {
             if (isset($arSysOptions['type']) && $arSysOptions['type'] == 'class' && isset($arSysOptions['classname'])) {
                 $rows = $this->getStorage()->query($sSql, PDO::FETCH_CLASS, $arSysOptions['classname'], array($this));
             } else {
                 $rows = $this->getStorage()->query($sSql);
             }
-            
+
             if (empty($arSysOptions['nocache'])) {
-                static::$arCaches[$sCacheKey] = $rows;
+                static::$caches[$sCacheKey] = $rows;
             }
         } else {
-            $rows = static::$arCaches[$sCacheKey];
+            $rows = static::$caches[$sCacheKey];
 
         }//end if else
-        
+
         return $rows;
     }
 
@@ -971,31 +996,31 @@ class DB extends Only
      * Делает запрос к БД и возращает массив результатов ввиде массива или класса
      * @param string $sSql
      * @param array  $arSysOptions
-     * 
+     *
      * @return array of classes
      */
     public function queryAll($sSql, $arSysOptions=array() )
     {
         $sCacheKey = hash('md5', $sSql);
         $rows = null;
-        
-        if (! empty($arSysOptions['nocache']) || empty(static::$arCaches[$sCacheKey] )) {
+
+        if (! empty($arSysOptions['nocache']) || empty(static::$caches[$sCacheKey] )) {
             if (isset($arSysOptions['type']) && $arSysOptions['type'] == 'class' && isset($arSysOptions['classname'])) {
                 $st = $this->getStorage()->query($sSql, PDO::FETCH_CLASS, $arSysOptions['classname'], array($this));
             } else {
                 $st = $this->getStorage()->query($sSql, PDO::FETCH_ASSOC);
             }
-            
+
             $rows = $st ? $st->fetchAll() : array() ;
 
             if (empty($arSysOptions['nocache'])) {
-                static::$arCaches[$sCacheKey] = $rows;
+                static::$caches[$sCacheKey] = $rows;
             }
         } else {
-            $rows = static::$arCaches[$sCacheKey];
+            $rows = static::$caches[$sCacheKey];
 
         }//end if else
-        
+
         return $rows;
     }
 
@@ -1008,12 +1033,11 @@ class DB extends Only
     /**
      * запуск запросов к БД вида Alter table, insert, update
      * @param string $sql
-     * @return integer 
+     * @return integer
      */
     public function execute($sql)
     {
-        $rows = $this->getStorage()->exec($sql);
-        return $rows;
+        return $this->getStorage()->exec($sql);
     }
 
     /**
@@ -1023,8 +1047,7 @@ class DB extends Only
      */
     public function getLastID($name=null)
     {
-        $val = $this->getStorage()->lastInsertId($name);
-        return $val;
+        return $this->getStorage()->lastInsertId($name);
     }
 
     /**
@@ -1034,5 +1057,5 @@ class DB extends Only
     {
         return $this->getStorage()->errorInfo();
     }
-    
+
 }

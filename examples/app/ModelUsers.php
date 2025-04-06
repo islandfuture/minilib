@@ -2,14 +2,16 @@
 /**
  *
  */
-class ModelUsers extends Model
+use IFMiniLib;
+
+class ModelUsers extends \Model
 {
 
     /**
      * функция возвращает название таблицы в которой хранятся сущности данного класса
      * @return string
      */
-    static public function getTable()
+    public static function getTable()
     {
         return 'users';
     }
@@ -18,7 +20,7 @@ class ModelUsers extends Model
      * функция возвращает название модели
      * @return string
      */
-    static public function getTitle()
+    public static function getTitle()
     {
         return 'Пользователи';
     }
@@ -32,7 +34,7 @@ class ModelUsers extends Model
      *      GUID - случайное значение
      * @return  string
      */
-    static public function getIdDefault()
+    public static function getIdDefault()
     {
         return 'AUTOINC';
     }
@@ -41,7 +43,7 @@ class ModelUsers extends Model
      * функция возвращает название первичного ключа
      * @return string
      */
-    static public function getIdName()
+    public static function getIdName()
     {
         return 'id';
     }
@@ -50,7 +52,7 @@ class ModelUsers extends Model
      * функция возвращает список полей модели
      * @return array
      */
-    static public function getClearFields()
+    public static function getClearFields()
     {
         return array(
             'id' => null,
@@ -69,7 +71,7 @@ class ModelUsers extends Model
      * функция возвращает значение по умолчанию для полей модели
      * @return array
      */
-    static public function getDefault()
+    public static function getDefault()
     {
         return array(
             'name' => '',
@@ -95,13 +97,13 @@ class ModelUsers extends Model
             '2' => array('Заблокирован'),
             '3' => array('Удален'),
         );
-        return $isOne
-            ? (
-                isset($arRelations[$this->statusid])
+        if ($isOne) {
+            return isset($arRelations[$this->statusid])
                 ? $arRelations[$this->statusid][$idx]
-                : null
-            )
-            : $arRelations;
+                : null;
+        }
+
+        return $arRelations;
     }
 
 }
