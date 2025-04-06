@@ -11,7 +11,7 @@ if (substr($argv[1],0,1) != '/') {
 
 try {
     if (! file_exists($projectdir)) {
-        mkdir($projectdir);
+        @mkdir($projectdir);
     }
 } catch(Exception $e) {
 
