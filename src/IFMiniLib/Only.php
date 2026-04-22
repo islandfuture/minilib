@@ -14,7 +14,7 @@ namespace IFMiniLib;
  *
  * @example
  *         class ActiveUser extends Only { ... }
- *         ActiveUser::I(); // вернет единственный экземпляр ActiveUser
+ *         ActiveUser::one(); // вернет единственный экземпляр ActiveUser
  */
 
 class Only
@@ -22,13 +22,13 @@ class Only
     /**
      * @var Array массив для хранения уникальных экземпляров
      */
-    private static $_instances=array();
+    private static $_instances = [];
 
     private function __construct($params = null)
     {
         $className = get_called_class();
 
-        if (method_exists($className, 'afterConstruct') ) {
+        if (method_exists($className, 'afterConstruct')) {
             $this->afterConstruct($params);
         }
     }
@@ -36,21 +36,21 @@ class Only
     // блокируем доступ к функции
     public function __clone()
     {
-        throw new Exception("__clone not available");
+        throw new \Exception("__clone not available");
     }
 
     // блокируем доступ к функции
     public function __wakeup()
     {
-        throw new Exception("__wakeup not available");
+        throw new \Exception("__wakeup not available");
     } // блокируем доступ к функции
 
     /**
      * возврщает один и тот же экземпляр этого класса
-     * @example Only::I()
+     * @example Only::one()
      * @return Only
      **/
-    public static function I($params = null)
+    public static function one($params = null)
     {
         $className = get_called_class();
         $className = strtolower($className);
@@ -65,7 +65,5 @@ class Only
 
         return self::$_instances[$className];
     }
-
-
 }
 /* end class Only */

@@ -6,9 +6,17 @@ class Pages
     // @var Core
     public $app;
 
-    public $wepPath = '';
+    public $webPath = '';
 
     public $properties = [];
+
+    public $title;
+    public $h1;
+
+    public function __construct(Core $app)
+    {
+        $this->app = $app;
+    }
 
     /**
      * Превращает текущий веб-путь в дисковый путь
@@ -191,24 +199,28 @@ class Pages
      * Метод соединяет шапку, футер и страницу и показывает это.
      *
      * @param string $page страница
-     * @param string $template название папки, где лежат шапка и футер
-     * @param array $arVars массив с переменными, которые можно использовать на странице
+     * @param string $layout название папки, где лежат шапка и футер
+     * @param array $vars массив с переменными, которые можно использовать на странице
      */
-    public function show($page, $template, $arVars=array())
+    public function show($page, $layout = '', $vars = [])
     {
         $sHtml = '';
-        if (file_exists($this->app->PATH_APP.'tpl'.DIRECTORY_SEPARATOR.$page.'.tpl.php')) {
-            extract($arVars);
+        if (file_exists($this->app->PATH_ROOT . 'tpl' . DIRECTORY_SEPARATOR . $page . '.tpl.php')) {
+            extract($vars);
             ob_start();
-            require $this->app->PATH_APP.'tpl'.DIRECTORY_SEPARATOR.$page.'.tpl.php';
+            require $this->app->PATH_ROOT . 'tpl' . DIRECTORY_SEPARATOR . $page . '.tpl.php';
             $sHtml = ob_get_contents();
             ob_end_clean();
         } else {
-            throw new Exception('Страница: '.$page.' не найдена');
+            throw new \Exception('Страница: ' . $page . ' не найдена');
         }
 
-        require $this->app->PATH_APP.'layout'.DIRECTORY_SEPARATOR.$template.DIRECTORY_SEPARATOR.'header.php';
+        if ($layout > '') {
+            require $this->app->PATH_ROOT . 'layout' . DIRECTORY_SEPARATOR . $layout . DIRECTORY_SEPARATOR . 'header.php';
+        }
         echo $sHtml;
-        require $this->app->PATH_APP.'layout'.DIRECTORY_SEPARATOR.$template.DIRECTORY_SEPARATOR.'footer.php';
+        if ($layout > '') {
+            require $this->app->PATH_ROOT . 'layout' . DIRECTORY_SEPARATOR . $layout . DIRECTORY_SEPARATOR . 'footer.php';
+        }
     }
 }

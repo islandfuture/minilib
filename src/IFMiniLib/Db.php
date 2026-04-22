@@ -18,12 +18,12 @@ class DB extends Only
     /**
      * @var array кеш для хранения запросов во время выполнения скрипта
      **/
-    protected static $caches=array();
+    protected static $caches = [];
 
     /**
      * @var array кеш для хранения запросов к конкретным таблицам (позволяет не выполнять одинаковые запросы к БД)
      **/
-    protected static $cacheTables = array();
+    protected static $cacheTables = [];
 
     /**
      * @var boolean параметр на будущее, для работы с мемкешем
@@ -33,7 +33,7 @@ class DB extends Only
     /**
      * @var Array of PDO statement
      **/
-    private $pools = array();
+    private $pools = [];
 
     /**
      * @var string название текущей БД
@@ -45,65 +45,60 @@ class DB extends Only
      * массив состоит из моделей/полей или общей модели/блоков
      * Общая модель называется '_' (1-й уровень массива), у каждой модели есть счетчик ошибок ierr
      */
-    protected static $errors = array();
+    protected static $errors = [];
 
     /**
      *  Создает модель данных (класс, который является проекцией какой-то таблицы)
      *
      *  @return Model
      */
-    public static function model($className,$arParams=null)
+    public static function model($className, $params = null)
     {
-        if ($arParams) {
-            return new $className($arParams);
+        if ($params) {
+            return new $className($params);
         } else {
             return new $className;
         }
-
     }
 
     /**
      * Метод генерит блок WHERE для запроса
      *
-     * @param array $arParams
+     * @param array $params
      * @return string условие для WHERE
      */
-    public static function generateWhereSQL($arParams )
+    public static function generateWhereSQL(array $params, array &$values)
     {
         /* если название модели не указано, то ругаемся */
-        if (empty($arParams['sModel'])) {
+        if (empty($params['model'])) {
             throw new \Exception('Class of model not defined');
         }
 
-        $className = $arParams['sModel'];
-        $sTableName = $className::getTable(); // название таблицы
-        $arFields    = $className::getClearFields(); // название полей таблицы
+        $className = $params['model'];
+        $tableName = $className::getTable(); // название таблицы
+        $fields    = $className::getClearFields(); // название полей таблицы
 
-        $sWhere        = '1=1';
-        $arRelations    = null;
+        $where        = '1=1';
+        $relations    = null;
 
         /*
          * Выставляем базу и таблицу для запроса
          */
-        if (!empty($arParams['sDatabase'] )) {
-            $table = '`' . $arParams['sDatabase'] . '`.`' . $sTableName . '`';
-        }
-        elseif ($className::getDatabase() > '') {
-            $table = '`' . $className::getDatabase() . '`.`' . $sTableName . '`';
-        }
-        else
-        {
-            $table = '`' . $sTableName . '`';
+        if (!empty($params['database'])) {
+            $table = '`' . $params['database'] . '`.`' . $tableName . '`';
+        } elseif ($className::getDatabase() > '') {
+            $table = '`' . $className::getDatabase() . '`.`' . $tableName . '`';
+        } else {
+            $table = '`' . $tableName . '`';
         }
 
-        if (empty($arParams['arFilter'])) {
-            $arParams['arFilter'] = array();
+        if (empty($params['filter'])) {
+            $params['filter'] = array();
         }
         /* перебираем массив с условиями фильтрации */
-        foreach($arParams['arFilter'] as $key => $value ) {
+        foreach ($params['filter'] as $key => $value) {
             /* если название ключа является названием поля из таблицы */
-            if (key_exists($key, $arFields)) {
-
+            if (key_exists($key, $fields)) {
                 if (is_array($value)) {
                     /**
                      * перибираем условия, чтобы сформировать правильный запрос
@@ -116,190 +111,193 @@ class DB extends Only
                                 )
                             );
                      */
-                    foreach($value as $op => $val ) {
-
+                    foreach ($value as $op => $val) {
                         $op = strtolower($op);
-                        if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields']) ) {
-                            $sKey = "AES_DECRYPT($table.`$key`,UNHEX('".$arParams['securesecret']."'))";
+                        if (
+                            !empty($params['securesecret'])
+                            && !empty($params['securefields'])
+                            && in_array($key, $params['securefields'])
+                        ) {
+                            $fullKey = "AES_DECRYPT($table.`$key`,UNHEX('" . $params['securesecret'] . "'))";
                         } else {
-                            if (! empty($arParams['collate'])) {
-                                $sKey = $table.".`$key` collate ".$arParams['collate'];
-                            } else {
-                                $sKey = $table.".`$key`";
-                            }
+                            $fullKey = $table . ".`$key`";
                         }
 
-                        switch($op ) {
-                        case 'not like':
-                        case 'like':
-                        case '>=':
-                        case '>':
-                        case '<':
-                        case '<=':
-                        case '=':
-                        case '!=':
-                            $sWhere .= " AND $sKey " . $op . " '" . addslashes($val) . "'";
+                        switch ($op) {
+                            case 'not like':
+                            case 'like':
+                            case '>=':
+                            case '>':
+                            case '<':
+                            case '<=':
+                            case '=':
+                            case '!=':
+                                $where .= " AND $fullKey " . $op . " :" . $key;
+                                $values[":$key"] = $val;
+                                break;
+                            case 'between':
+                                if (is_array($val)) {
+                                    $where .= " AND $fullKey $op :{$key}_0 and :{$key}_1";
+                                    $values[":{$key}_0"] = $val[0];
+                                    $values[":{$key}_1"] = $val[1];
+                                } else {
+                                    throw new \Exception("Value for BETWEEN must be array");
+                                }
+                                break;
+                            case '!in':
+                            case 'not in':
+                            case 'in':
+                                if ($op == '!in') {
+                                    $op = 'NOT IN';
+                                }
 
-                            break;
-                        case 'between':
-                            if (is_array($val)) {
-                                $sWhere .= " AND $sKey $op '" . addslashes($val[0]) . "' and '" . addslashes($val[1]) . "'";
-                            } else {
-                                $sWhere .= " AND ($sKey $op " . addslashes($val) . ")";
-                            }
-                            break;
-                        case '!in':
-                            if (is_array($val)) {
-                                foreach($val AS &$value )
-                                {
-                                    $value = addslashes($value);
+                                if (! is_array($val)) {
+                                    $val = explode(',', $val);
+                                    $cnt = count($val);
+                                } else {
+                                    $cnt = count($val);
                                 }
-                                $val = "'" . implode("','", $val) . "'";
-                                $sWhere .= " AND $sKey not in (" . $val . ")";
-                            }
-                            else
-                            {
-                                $sWhere .= " AND $sKey not in (" . addslashes($val) . ")";
-                            }
-                            break;
-                        case 'not in':
-                        case 'in':
-                            /*
-                                if ( !is_array($val) && strpos($val,',')>0 ){
-                                $val = explode(',',$val);
+
+                                if ($cnt == 0) {
+                                    throw new \Exception("Value for IN must be non empty array");
                                 }
-                             */
-                            if (is_array($val)) {
-                                foreach($val AS &$value )
-                                {
-                                    $value = addslashes($value);
+
+                                $valueKeys = '';
+                                for ($iKey = 0; $iKey < $cnt; $iKey++) {
+                                    if ($iKey == 0) {
+                                        $valueKeys = ":{$key}_$iKey";
+                                    } else {
+                                        $valueKeys .= ",:{$key}_$iKey";
+                                    }
+                                    $values[":{$key}_$iKey"] = $val[$iKey];
                                 }
-                                $val = "'" . implode("','", $val) . "'";
-                                $sWhere .= " AND $sKey $op (" . $val . ")";
-                            }
-                            else
-                            {
-                                $sWhere .= " AND $sKey $op (" . addslashes($val) . ")";
-                            }
-                            break;
-                        default:
-                            if ($op == 0) {
-                                foreach($value AS &$val )
-                                {
-                                    $val = addslashes($val);
+                                $where .= " AND $fullKey $op ($valueKeys)";
+                                break;
+                            default:
+                                if ($op == 0) {
+                                    $op = 'IN';
+                                    $cnt = count($value);
+                                } else {
+                                    $cnt = count($val);
                                 }
-                                $sWhere .= " AND $sKey IN ('" . implode("','", $value) . "')";
-                                break 2;
-                            }
-                            else
-                            {
-                                foreach($val AS &$value )
-                                {
-                                    $value = addslashes($value);
+
+                                $valueKeys = '';
+                                for ($iKey = 0; $iKey < $cnt; $iKey++) {
+                                    if ($iKey == 0) {
+                                        $valueKeys = ":{$key}_$iKey";
+                                    } else {
+                                        $valueKeys .= ",:{$key}_$iKey";
+                                    }
+                                    $values[":{$key}_$iKey"] = ($op == 0 ? $value[$iKey] : $val[$iKey]);
                                 }
-                                $sWhere .= " AND $sKey " . $op . " ('" . implode("','", $val) . "')";
-                            }
+                                $where .= " AND $fullKey IN ($valueKeys)";
+                                if ($op == 0) {
+                                    break 2;
+                                }
+                                break;
                         } /* end switch*/
                     }
+                } elseif ($value == '[:null:]') {
+                    $where .= " AND $table.`" . $key . "` is null";
+                } elseif ($value == '[:!null:]') {
+                    $where .= " AND $table.`" . $key . "` is not null";
+                } elseif ($value == '[:ignore:]') {
+                    /* по данному полю сортировать нельзя */
                 } else {
-                    if ($value == '[:null:]') {
-                        $sWhere .= " AND $table.`" . $key . "` is null";
-                    } elseif ($value == '[:!null:]') {
-                        $sWhere .= " AND $table.`" . $key . "` is not null";
-                    } elseif ($value == '[:ignore:]') {
-                        /* по данному полю сортировать нельзя */
+                    if (
+                        !empty($params['securesecret'])
+                        && !empty($params['securefields'])
+                        && in_array($key, $params['securefields'])
+                    ) {
+                        $fullKey = "AES_DECRYPT($table.`$key`,UNHEX('" . $params['securesecret'] . "'))";
                     } else {
-                        if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields']) ) {
-                            $sKey = "AES_DECRYPT($table.`$key`,UNHEX('".$arParams['securesecret']."'))";
-                        } else {
-                            $sKey = $table.".`$key`";
-                        }
-
-                        $sWhere .= " AND $sKey='" . addslashes($value) . "'";
+                        $fullKey = $table . ".`$key`";
                     }
+
+                    $where .= " AND $fullKey=:$key";
+                    $values[":$key"] = $value;
                 }
-            }
-            else
-            {
-                if (!$arRelations) {
-                    $arRelations = $className::getRelations();
+            } else {
+                if (!$relations) {
+                    $relations = $className::getRelations();
                 }
 
-                if (isset($arRelations[$key] )) {
-                    $rel         = $arRelations[$key];
+                if (isset($relations[$key])) {
+                    $rel         = $relations[$key];
                     $classname     = $rel[3];
 
                     if ($rel[0] == '::table::') {
-
-                        $sWhere .= ' AND '. $rel[2] .' IN ('.static::generateSelectSQL(
-                            array(
-                                'sModel' => $classname,
-                                'sDatabase' => $classname::getDatabase(),
+                        $keyValues2 = [];
+                        $where .= ' AND ' . $rel[2] . ' IN (' . static::generateSelectSQL(
+                            [
+                                'model' => $classname,
+                                'database' => $classname::getDatabase(),
                                 'fields' => $rel[4],
-                                'arFilter'=> $value
-                            )
-                        ).')';
+                                'filter' => $value
+                            ],
+                            $keyValues2
+                        ) . ')';
 
+                        foreach ($keyValues2 as $k => $v) {
+                            $keyValues[$k] = $v;
+                        }
                     }
-
-                }
-                elseif ($key == ':sql:') {
+                } elseif ($key == ':sql:') {
                     /**
                      * перибираем условия, чтобы сформировать правильный запрос
                      * @example пример фильтра обрабатываемого в этом блоке
                      *      // Выбрать все записи, чей код больше 100 и меньше 1000
-                     *      $arParams['arFilter'] = array(
+                     *      $params['filter'] = array(
                                 ':sql:' => ' AND id > 100 AND id < 1000'
                             );
                      */
-                    $sWhere .= ' AND ' . $value;
+                    $where .= ' AND ' . $value;
                 } else {
                     if (strpos($key, '(') !== false && strpos($key, ' as ') !== false) {
                         /** можно проверить что за функция */
                     } else {
-                        throw new \Exception("Unknown key [".$key."] in Model");
+                        throw new \Exception("Unknown key [" . $key . "] in Model");
                     }
                 }
             }
         }
-        return $sWhere;
+        return $where;
     }
 
     /**
      * Возвращает SQL запрос для подсчета количества записей
      * @return string
      */
-    public static function generateCountSQL($arParams)
+    public static function generateCountSQL(array $params, array &$values)
     {
         $from_add = '';
-        if (empty($arParams['arFilter'])) {
-            $arParams['arFilter'] = array();
+        if (empty($params['filter'])) {
+            $params['filter'] = array();
         }
 
-        $className = $arParams['sModel'];
+        $className = $params['model'];
 
         /*
          * Выставляем базу и таблицу для запроса
          */
-        if (!empty($arParams['sDatabase'] )) {
-            $table = '`' . $arParams['sDatabase'] . '`.`' . $className::getTable() . '`';
+        if (!empty($params['database'])) {
+            $table = '`' . $params['database'] . '`.`' . $className::getTable() . '`';
         } elseif ($className::getDatabase() > '') {
             $table = '`' . $className::getDatabase() . '`.`' . $className::getTable() . '`';
         } else {
             $table = '`' . $className::getTable() . '`';
         }
 
-        $sWhere = static::generateWhereSQL($arParams);
+        $where = static::generateWhereSQL($params, $values);
 
-        if (!empty($arParams['joins'] )) {
-            if (is_string($arParams['joins'])) {
-                $arParams['joins'] = array($arParams['joins'] );
+        if (!empty($params['joins'])) {
+            if (is_string($params['joins'])) {
+                $params['joins'] = array($params['joins'] );
             }
 
-            foreach ($arParams['joins'] as $i => $joinClass ) {
-
+            foreach ($params['joins'] as $i => $joinClass) {
                 if (is_array($joinClass)) {
-                    if (isset($joinClass['typeJoin'] )) {
+                    if (isset($joinClass['typeJoin'])) {
                         $from_add .= ' ' . $joinClass['typeJoin'] . ' ';
                     } else {
                         $from_add .= ' INNER JOIN ';
@@ -308,7 +306,7 @@ class DB extends Only
                     $joinClassname     = $joinClass[0];
                     $t                 = $joinClassname::getTable();
 
-                    if (isset($joinClass[1] )) {
+                    if (isset($joinClass[1])) {
                         $from_add .= '(SELECT * FROM `' . $t . '` WHERE ' . $joinClass[1] . ') as t' . $i . ' ';
                     } else {
                         $from_add .= ' ' . $t . ' as t' . $i . ' ';
@@ -320,97 +318,89 @@ class DB extends Only
                     $from_add .= ', `' . $t . '` as t' . $i . ' ';
                 }
             }
-        } elseif (!empty($arParams['ignoreindex']) && is_string($arParams['ignoreindex'])) {
-            $from_add .= ' IGNORE INDEX (' . $arParams['ignoreindex'] . ') ';
-        } elseif (!empty($arParams['useindex']) && is_string($arParams['useindex'])) {
-            $from_add .= ' USE INDEX (' . $arParams['useindex'] . ') ';
+        } elseif (!empty($params['ignoreindex']) && is_string($params['ignoreindex'])) {
+            $from_add .= ' IGNORE INDEX (' . $params['ignoreindex'] . ') ';
+        } elseif (!empty($params['useindex']) && is_string($params['useindex'])) {
+            $from_add .= ' USE INDEX (' . $params['useindex'] . ') ';
         }
 
-        return 'SELECT COUNT(*) as cnt FROM ' . $table . ' ' . $from_add . ' WHERE ' . $sWhere;
+        return 'SELECT COUNT(*) as cnt FROM ' . $table . ' ' . $from_add . ' WHERE ' . $where;
     }
 
     /**
      * Метод генерит тело SELECT запроса
-     * @param array $arParams
+     * @param array $params
      * @return string
      */
-    public static function generateSelectSQL($arParams)
+    public static function generateSelectSQL(array $params, array &$values)
     {
-        if (empty($arParams['sModel'])) {
+        if (empty($params['model'])) {
             throw new \Exception('Class of model not defined');
         }
 
-        $className = $arParams['sModel'];
-        $sTableName = $className::getTable();
-        $arFields     = $className::getClearFields();
+        $className = $params['model'];
+        $tableName = $className::getTable();
+        $fields     = $className::getClearFields();
 
         /*
          * Выставляем базу и таблицу для запроса
          */
-        if (!empty($arParams['sDatabase'] )) {
-            $table = '`' . $arParams['sDatabase'] . '`.`' . $sTableName . '`';
+        if (!empty($params['database'])) {
+            $table = '`' . $params['database'] . '`.`' . $tableName . '`';
         } elseif ($className::getDatabase() > '') {
-            $table = '`' . $className::getDatabase() . '`.`' . $sTableName . '`';
+            $table = '`' . $className::getDatabase() . '`.`' . $tableName . '`';
         } else {
-            $table = '`' . $sTableName . '`';
+            $table = '`' . $tableName . '`';
         }
 
         $from_add = '';
 
         $limit = '';
-        if (!empty($arParams['iPageSize'] )) {
+        if (!empty($params['pageSize'])) {
+            $offset = empty($params['page']) ? 0 : ($params['page'] - 1) * $params['pageSize'];
+            $limit = " LIMIT " . $offset . "," . $params['pageSize'];
+        } /* emd if */
 
-            if (empty($arParams['iPage'] )) {
-                $offset = 0;
-            } else {
-                $offset = ($arParams['iPage'] - 1) * $arParams['iPageSize'];
-            }
-
-            $limit = " LIMIT " . $offset . "," . $arParams['iPageSize'];
-        }/* emd if */
-
-
-        if (!isset($arParams['arFilter'] )) {
-            $arParams['arFilter']     = array();
+        if (!isset($params['filter'])) {
+            $params['filter']     = [];
         }
 
-        if (empty($arParams['fields'] )) {
-            if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) ) {
+        if (empty($params['fields'])) {
+            if (!empty($params['securesecret']) && !empty($params['securefields'])) {
                 $ar = array();
-                foreach($arFields as $key => $v) {
-                    if (in_array($key, $arParams['securefields'])) {
-                        $ar[] = "AES_DECRYPT(".$table . ".`".$key."`,UNHEX('".$arParams['securesecret']."')) as `$key`";
+                foreach ($fields as $key => $v) {
+                    if (in_array($key, $params['securefields'])) {
+                        $ar[] = "AES_DECRYPT(".$table . ".`".$key."`,UNHEX('".$params['securesecret']."')) as `$key`";
                     } else {
-                        $ar[] = $table . '.`'.$key.'`';
+                        $ar[] = $table . '.`' . $key . '`';
                     }
                 }
                 $select = implode(', ', $ar);
             } else {
-                $arKeys     = array_keys($arFields);
-                $select     = $table . '.`' . implode('`,' . $table . '.`', $arKeys) . '`';
+                $keys     = array_keys($fields);
+                $select     = $table . '.`' . implode('`,' . $table . '.`', $keys) . '`';
             }
         } else {
-            if (is_array($arParams['fields'])) {
-                $select = implode(',', $arParams['fields']);
+            if (is_array($params['fields'])) {
+                $select = implode(',', $params['fields']);
             } else {
-                $select = $arParams['fields'];
+                $select = $params['fields'];
             }
 
             /* @todo добавить анализ полей и если есть групповые функции SUM, AVG, COUNT то остальные поля добавить в GROUP BY */
         }/* end if else */
 
+        $where = static::generateWhereSQL($params, $values);
 
-        $sWhere = static::generateWhereSQL($arParams);
-
-        if (!empty($arParams['joins'] )) {
-            if (is_string($arParams['joins'])) {
-                $arParams['joins'] = array($arParams['joins'] );
+        if (!empty($params['joins'])) {
+            if (is_string($params['joins'])) {
+                $params['joins'] = array($params['joins'] );
             }
 
-            foreach($arParams['joins'] as $i => $joinClass ) {
+            foreach ($params['joins'] as $i => $joinClass) {
 
                 if (is_array($joinClass)) {
-                    if (isset($joinClass['typeJoin'] )) {
+                    if (isset($joinClass['typeJoin'])) {
                         $from_add .= ' ' . $joinClass['typeJoin'] . ' ';
                     } else {
                         $from_add .= ' INNER JOIN ';
@@ -419,7 +409,7 @@ class DB extends Only
                     $joinClassname     = $joinClass[0];
                     $t                 = $joinClassname::getTable();
 
-                    if (isset($joinClass[1] )) {
+                    if (isset($joinClass[1])) {
                         $from_add .= '(SELECT * FROM `' . $t . '` WHERE ' . $joinClass[1] . ') as t' . $i . ' ';
                     } else {
                         $from_add .= ' ' . $t . ' as t' . $i . ' ';
@@ -432,255 +422,270 @@ class DB extends Only
                     $from_add .= ', `' . $t . '` as t' . $i;
                 }
             }
-        } elseif (!empty($arParams['ignoreindex']) && is_string($arParams['ignoreindex'])) {
-            $from_add .= ' IGNORE INDEX (' . $arParams['ignoreindex'] . ') ';
-        } elseif (!empty($arParams['useindex']) && is_string($arParams['useindex'])) {
-            $from_add .= ' USE INDEX (' . $arParams['useindex'] . ') ';
+        } elseif (!empty($params['ignoreindex']) && is_string($params['ignoreindex'])) {
+            $from_add .= ' IGNORE INDEX (' . $params['ignoreindex'] . ') ';
+        } elseif (!empty($params['useindex']) && is_string($params['useindex'])) {
+            $from_add .= ' USE INDEX (' . $params['useindex'] . ') ';
         }
 
         $orders = '';
-        if (!empty($arParams['arSort'] )) {
+        if (!empty($params['sort'])) {
             $orders = array();
-            foreach($arParams['arSort'] as $by => $order )
-            {
+            foreach ($params['sort'] as $by => $order) {
                 $orders[] = '`' . $by . '` ' . $order;
             }
             if (sizeof($orders) > 0) {
                 $orders = 'ORDER BY ' . implode(',', $orders);
-            }
-            else
-            {
+            } else {
                 $orders = '';
             }
         }
 
-        return 'SELECT ' . $select . ' FROM ' . $table . $from_add . ' WHERE ' . $sWhere . ' ' . $orders . $limit;
+        return 'SELECT ' . $select . ' FROM ' . $table . $from_add . ' WHERE ' . $where . ' ' . $orders . $limit;
     }
 
 
     /**
      * Функция возвращает массив объектов определнного класса
-     * Если присутсвует параметр $arSysOptions[index] - отдаем индексированный массив
+     * Если присутсвует параметр $sysOptions[index] - отдаем индексированный массив
      *
-     * @param  Array $arParametrs  массив с данными класса и параметров фильтрации для выбора нужных объектов
-     * @param  Array $arSysOptions массив с системными опциями (такие как отключить кеширование: nocache=>true)
+     * @param  Array $parametrs  массив с данными класса и параметров фильтрации для выбора нужных объектов
+     * @param  Array $sysOptions массив с системными опциями (такие как отключить кеширование: nocache=>true)
      * @return Array
      *
      * @example возвращает первые 20 записей сделанные в блоге после 1 января 2015 года по убыванию
-     * DB::I()->getAll(array
-     *      'sModel'=>'Blogs',
-     *      'arFilter' => array(
+     * DB::one()->getAll(array
+     *      'model'=>'Blogs',
+     *      'filter' => array(
      *          'tCreated' => array('>' => '2015-01-01')
      *      ),
-     *      'arSort' => array(
+     *      'sort' => array(
      *          'tCreated' => 'desc'
      *      )
-     *      'iPageSize' => 30,
-     *      'iPage' => 1
+     *      'pageSize' => 30,
+     *      'page' => 1
      *
      * ));
      */
-    public static function getAll($arParametrs = array(), $arSysOptions = array())
+    public static function getAll($parametrs = [], $sysOptions = [])
     {
-        $sKeyCache = md5(serialize($arParametrs));
+        $keyCache = md5(serialize($parametrs));
 
-        if (empty($arParametrs['sModel'])) {
-            throw new \Exception('Cannot define class for sModel');
+        if (empty($parametrs['model'])) {
+            throw new \Exception('Cannot define class for model');
         }
 
-        if (! empty($arSysOptions['index'])) {
-            $sKeyCache .= 'idx';
+        if (! empty($sysOptions['index'])) {
+            $keyCache .= 'idx';
         }
 
         /* узнаем название класса модели */
-        $className = $arParametrs['sModel'];
-        $arResult = array();
+        $className = $parametrs['model'];
+        $result = [];
 
-        if (empty( static::$cacheTables[$className][$sKeyCache] )
-            || (isset($arSysOptions['nocache'] ) && $arSysOptions['nocache'])
+        if (
+            empty(static::$cacheTables[$className][$keyCache])
+            || (isset($sysOptions['nocache']) && $sysOptions['nocache'])
         ) {
-            if (empty($arParametrs["iPageSize"])) {
-                $arParametrs['iPageSize'] = 100;
+            if (empty($parametrs["pageSize"])) {
+                $parametrs['pageSize'] = 100;
             }
 
-            if (empty($arParametrs['iPage'])) {
-                $arParametrs['iPage'] = 1;
+            if (empty($parametrs['page'])) {
+                $parametrs['page'] = 1;
             }
 
-            if (empty($arParametrs['arFilter'])) {
-                $arParametrs['arFilter'] = Array();
+            if (empty($parametrs['filter'])) {
+                $parametrs['filter'] = [];
             }
+
+            $values = [];
 
             /* Собираем SQL */
-            $sSql = static::generateSelectSQL($arParametrs);
+            $sql = static::generateSelectSQL($parametrs, $values);
 
             /* Отправляем запрос к базе */
-            if (! empty($arSysOptions['debug'])) {
-                echo '[[[' . $sSql . ']]]';
+            if (! empty($sysOptions['debug'])) {
+                App::one()->log('getAll: ' . $sql, ['params' => $parametrs], 'debug');
             }
-            $st = DB::I()->getStorage()->query($sSql, PDO::FETCH_CLASS, $className, array(DB::I()));
+            $st = DB::one()->getStorage()->prepare($sql);
 
-            if ($st) {
-                $arResult = $st->fetchAll();
+            if ($st->execute($values)) {
+                $st->setFetchMode(PDO::FETCH_CLASS, $className, [DB::one()]);
+                $result = $st->fetchAll();
 
-                if (! empty($arSysOptions['index'] )) {
-                    $idName     = $className::getIdName();
-                    $arTmp = array();
-                    foreach($arResult as $obTmp )
-                    {
-                        if (! empty($arParametrs['fields'])) {
+                if (! empty($sysOptions['index'])) {
+                    if (
+                        $sysOptions['index'] !== true
+                        && $className::is($sysOptions['index'])
+                    ) {
+                        $idName = $sysOptions['index'];
+                    } else {
+                        $idName = $className::getIdName();
+                    }
+
+                    $arTmp = [];
+                    foreach ($result as $obTmp) {
+                        if (! empty($parametrs['fields'])) {
                             $obTmp->readOnly = true;
                         }
                         $arTmp[ $obTmp->{$idName} ] = $obTmp;
                     }
-                    $arResult = array();
-                    $arResult = & $arTmp;
-                } elseif (! empty($arParametrs['fields'])) {
-                    foreach($arResult as $idx => $obTmp )
-                    {
-                        $arResult[$idx]->readOnle = true;
+                    $result = [];
+                    $result = & $arTmp;
+                } elseif (! empty($parametrs['fields'])) {
+                    foreach ($result as $idx => $obTmp) {
+                        $result[$idx]->readOnly = true;
                     }
                 }
             }
+            unset($values);
 
             if (empty(static::$cacheTables[$className])) {
                 static::$cacheTables[$className] = array();
             }
 
-            static::$cacheTables[$className][$sKeyCache] = & $arResult;
+            static::$cacheTables[$className][$keyCache] = & $result;
         }//end if self::$_cache
 
-        return static::$cacheTables[$className][$sKeyCache];
+        return static::$cacheTables[$className][$keyCache];
     }
 
     /**
      * Возвращает количество найденных записей
      *
-     * @param array $arParametrs  данные для запроса
-     * @param array $arSysOptions Дополнительные условия по отбору объекта
+     * @param array $parametrs  данные для запроса
+     * @param array $sysOptions Дополнительные условия по отбору объекта
      *
      * @return integer
      **/
-    public static function getCountAll($arParametrs = array(), $arSysOptions = array() )
+    public static function getCountAll($parametrs = [], $sysOptions = [])
     {
-        $arParametrs['fileds'] = array('count(*) as cnt');
+        $parametrs['fileds'] = ['count(*) as cnt'];
 
-        if (empty($arParametrs['sModel'])) {
-            throw new \Exception('Cannot define class for sModel');
-        }
-
-        if (isset($arParametrs['iPage'])) {
-            unset($arParametrs['iPage']);
-        }
-        if (isset($arParametrs['iPageSize'])) {
-            unset($arParametrs['iPageSize']);
-        }
-        if (isset($arParametrs['arSort'])) {
-            unset($arParametrs['arSort']);
-        }
-        if (empty($arParametrs['arFilter'] )) {
-            $arParametrs['arFilter'] = Array();
+        if (empty($parametrs['model'])) {
+            throw new \Exception('Cannot define class for model');
         }
 
-        $sKeyCache = md5(serialize($arParametrs));
+        if (isset($parametrs['page'])) {
+            unset($parametrs['page']);
+        }
+        if (isset($parametrs['pageSize'])) {
+            unset($parametrs['pageSize']);
+        }
+        if (isset($parametrs['sort'])) {
+            unset($parametrs['sort']);
+        }
+        if (empty($parametrs['filter'])) {
+            $parametrs['filter'] = [];
+        }
+
+        $keyCache = md5(serialize($parametrs));
 
         /* узнаем название класса модели */
-        $className = $arParametrs['sModel'];
+        $className = $parametrs['model'];
         $iResult = 0;
+        $values = [];
 
-        if
-        (empty( static::$cacheTables[$className][$sKeyCache] )
-            || (isset($arSysOptions['nocache'] ) && $arSysOptions['nocache'])
+        if (
+            empty(static::$cacheTables[$className][$keyCache])
+            || (
+                isset($sysOptions['nocache'])
+                && $sysOptions['nocache']
+            )
         ) {
-
-            $arSelect = array();
+            $select = [];
 
             /* Собираем SQL */
-            $sSql = static::generateCountSQL($arParametrs);
+            $sql = static::generateCountSQL($parametrs, $values);
 
             /* Отправляем запрос к базе */
-            if (!empty($arSysOptions['debug'] )) {
-                static::$debugQuery = $sSql;
+            if (!empty($sysOptions['debug'])) {
+                App::one()->log('Get count: ' . $sql, ['params' => $parameters], 'debug');
+                static::$debugQuery = $sql;
             }
-            $st = DB::I()->getStorage()->query($sSql);
+            $st = DB::one()->getStorage()->prepare($sql);
 
-            if ($st) {
+            if ($st->execute($values)) {
                 $arTmp = $st->fetch(PDO::FETCH_ASSOC);
                 if (isset($arTmp['cnt'])) {
-                    $iResult=$arTmp['cnt'];
+                    $iResult = $arTmp['cnt'];
                 }
-
             }
 
             if (empty(static::$cacheTables[$className])) {
                 static::$cacheTables[$className] = array();
             }
 
-            static::$cacheTables[$className][$sKeyCache] = $iResult;
+            static::$cacheTables[$className][$keyCache] = $iResult;
         }//end if self::$_cache
 
-        return static::$cacheTables[$className][$sKeyCache];
+        return static::$cacheTables[$className][$keyCache];
     }
 
     /**
      * Возвращает объект связанный с таблицей
      *
-     * @param array $arParametrs  данные для запроса
-     * @param array $arSysOptions Дополнительные условия по отбору объекта
+     * @param array $parametrs  данные для запроса
+     * @param array $sysOptions Дополнительные условия по отбору объекта
      *
      * @return Model
      **/
-    public static function getOne($arParametrs = array(), $arSysOptions = array() )
+    public static function getOne($parametrs = [], $sysOptions = [])
     {
-        $arParametrs['iPage'] = 1;
-        $arParametrs['iPageSize'] = 1;
+        $parametrs['page'] = 1;
+        $parametrs['pageSize'] = 1;
 
-        $rows = static::getAll($arParametrs, $arSysOptions);
+        $rows = static::getAll($parametrs, $sysOptions);
 
         $obj = null;
-        foreach($rows as $obj) {
+        foreach ($rows as $obj) {
             break;
         }
-
         return $obj;
     }
 
     /**
      * Удаляет записи
      *
-     * @param array $arParametrs  данные для запроса
+     * @param array $parametrs  данные для запроса
      **/
-    public static function deleteAll($arParametrs=array() )
+    public static function deleteAll($parametrs = [])
     {
-        if (empty($arParametrs['sModel'])) {
+        if (empty($parametrs['model'])) {
             throw new \Exception('Cannot define class for Model');
         }
 
         /* узнаем название класса модели */
-        $className = $arParametrs['sModel'];
+        $className = $parametrs['model'];
 
         /*
          * Выставляем базу и таблицу для запроса
          */
-        if (! empty($arParametrs['sDatabase'] )) {
-            $sTable = '`'.$arParametrs['sDatabase'].'`.`'.$className::getTable().'`';
+        if (! empty($parametrs['database'])) {
+            $table = '`' . $parametrs['database'] . '`.`' . $className::getTable() . '`';
         } elseif ($className::getDatabase() > '') {
-            $sTable = '`'.$className::getDatabase().'`.`'.$className::getTable().'`';
+            $table = '`' . $className::getDatabase() . '`.`' . $className::getTable() . '`';
         } else {
-            $sTable = '`'.$className::getTable().'`';
+            $table = '`' . $className::getTable() . '`';
         }
 
-        $sWhere     = static::generateWhereSQL($arParametrs);
-        $sql     = "DELETE FROM " . $sTable . " WHERE " . $sWhere;
-        $result     = static::I()->execute($sql);
+        $limit = '';
+        if (!empty($parametrs['iPageSize'])) {
+            $limit = " LIMIT " . intval($parametrs['iPageSize']);
+        }
+
+        $values = [];
+        $where     = static::generateWhereSQL($parametrs, $values);
+        $sql     = "DELETE FROM " . $table . " WHERE " . $where . $limit;
+        $st = static::one()->getStorage()->prepare($sql);
+        $result = $st->execute($values);
 
         if (false !== $result) {
             if (0 === $result) {
-                $err = static::I()->errorInfo();
+                $err = static::one()->errorInfo();
                 if ('00000' != $err[0]) {
-                    echo "<div class='error'>" . $sql;
-                    echo ($err);
-                    echo '</div>';
+                    App::one()->log('Error in DB::deleteAll[' . $sql . ']; ' . print_r($err, true), [], 'error');
                 }//end if
             }//end if
         }//end if
@@ -817,7 +822,7 @@ class DB extends Only
      */
     public function isConnected()
     {
-        return is_object(DB::I()->getStorage());
+        return is_object(DB::one()->getStorage());
     }
 
     /**
@@ -826,7 +831,7 @@ class DB extends Only
      */
     public function begin()
     {
-        return DB::I()->getStorage()->beginTransaction();
+        return DB::one()->getStorage()->beginTransaction();
     }
 
     /**
@@ -835,7 +840,7 @@ class DB extends Only
      */
     public function commit()
     {
-        return DB::I()->getStorage()->commit();
+        return DB::one()->getStorage()->commit();
     }
 
     /**
@@ -844,7 +849,7 @@ class DB extends Only
      */
     public function rollback()
     {
-        return DB::I()->getStorage()->rollBack();
+        return DB::one()->getStorage()->rollBack();
     }
 
     /**
@@ -854,15 +859,15 @@ class DB extends Only
      */
     public static function clearInnerCache($className = '')
     {
-        if ($className == '') {
-            static::$arCaches = array();
-        }
-        elseif (isset(static::$cacheTables[$className])) {
-            static::$cacheTables[$className] = array();
-        }
-        elseif ($className == ':all:') {
-            static::$cacheTables = array();
-            static::$caches = array();
+        if ($className == '' || $className == ':all:') {
+            static::$caches = [];
+            static::$cacheTables = [];
+        } elseif ($className == ':class:' || $className == ':table:') {
+            static::$cacheTables = [];
+        } elseif ($className == ':query:') {
+            static::$caches = [];
+        } elseif (isset(static::$cacheTables[$className])) {
+            static::$cacheTables[$className] = [];
         }
     }
 
@@ -871,27 +876,27 @@ class DB extends Only
      * @throws WrongArgumentException
      * @return DB
     **/
-    public function addStorage($key, $arDBConfig)
+    public function addStorage($key, $dbConfig)
     {
         if (isset($this->pools[$key])) {
             throw new \Exception("already have '{$key}' link db");
         }
 
-        $arDBPoolConfig = MiniLibCore::$app->dbpool;
-        if ($arDBPoolConfig == null) {
-            $arDBPoolConfig = array();
+        $dbPoolConfig = Core::$app->dbpool;
+        if ($dbPoolConfig == null) {
+            $dbPoolConfig = array();
         }
-        $arDBPoolConfig[ $key ] = $arDBConfig;
-        MiniLibCore::$app->dbpool = $arDBPoolConfig;
+        $dbPoolConfig[ $key ] = $dbConfig;
+        Core::$app->dbpool = $dbPoolConfig;
 
         static::$curKey = $key;
         return $this;
     }
 
-    public function disconnect($sKey='')
+    public function disconnect($key = '')
     {
-        if ($sKey > '') {
-            static::$curKey = $sKey;
+        if ($key > '') {
+            static::$curKey = $key;
         }
 
         $this->pools[static::$curKey] = null;
@@ -901,41 +906,50 @@ class DB extends Only
      * Функция возвращает класс для работы с хранилищем
      * @return class
      */
-    private function getStorage($sKey = '')
+    private function getStorage($key = '')
     {
-        if ($sKey > '') {
-            static::$curKey = $sKey;
+        if ($key > '') {
+            static::$curKey = $key;
         }
 
         if (empty($this->pools[static::$curKey])) {
-            $arDBPoolConfig = MiniLibCore::$app->dbpool;
-            if (empty($arDBPoolConfig[static::$curKey])) {
+            $dbPoolConfig = Core::$app->dbpool;
+            if (empty($dbPoolConfig[static::$curKey])) {
                 throw new \Exception('Cannot read config for initialize DB {' . static::$curKey . '}');
             }
 
-            $arPdoOptions = array(
+            $pdoOptions = array(
                 PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 //PDO::MYSQL_ATTR_MAX_BUFFER_SIZE => 4*1024*1024
             );
 
             $this->pools[static::$curKey] =  new PDO(
-                $arDBPoolConfig[static::$curKey]['dsn'],
-                $arDBPoolConfig[static::$curKey]['user'],
-                $arDBPoolConfig[static::$curKey]['password'],
-                $arPdoOptions
+                $dbPoolConfig[static::$curKey]['dsn'],
+                $dbPoolConfig[static::$curKey]['user'],
+                $dbPoolConfig[static::$curKey]['password'],
+                $pdoOptions
             );
 
-            $this->pools[static::$curKey]->exec("SET NAMES 'utf8'");
+            if (
+                ! empty($dbPoolConfig[static::$curKey]['afterConnect'])
+                && is_array($dbPoolConfig[static::$curKey]['afterConnect'])
+            ) {
+                foreach ($dbPoolConfig[static::$curKey]['afterConnect'] as $command) {
+                    $this->pools[static::$curKey]->exec($command);
+                }
+            } else {
+                $this->pools[static::$curKey]->exec("SET NAMES 'utf8mb4'");
+            }
         }
 
         return $this->pools[static::$curKey];
     }
 
-    public function setKey($sKey='')
+    public function setKey($key = '')
     {
-        if ($sKey > '') {
-            static::$curKey = $sKey;
+        if ($key > '') {
+            static::$curKey = $key;
         } else {
             static::$curKey = 'default';
         }
@@ -943,50 +957,48 @@ class DB extends Only
     }
 
     /**
-     * создется объект, для работы с БД. Данные для соединения берутся из класса SFW_Config->dbpool
+     * создется объект, для работы с БД. Данные для соединения берутся из класса Core::$app->dbpool
      */
     public function __construct()
     {
-        $cacheConfig = MiniLibCore::$app->cache;
+        $cacheConfig = Core::$app->cache;
         if (
-            $cacheConfig 
-            && isset($cacheConfig['enable']) 
+            $cacheConfig
+            && isset($cacheConfig['enable'])
             && $cacheConfig['enable'] == 'on'
         ) {
             $this->enableCache = true;
             /* @todo add code for init cache classes */
         }
 
-        static::$errors = array(
-            'commons'=>array()
-        );
+        static::$errors = [
+            'commons' => []
+        ];
     }//end function
-
 
     /**
      * Функция выполняет SQL-запрос к БД и
-     * @param string $sSql
-     * @param array  $arSysOptions
+     * @param string $sql
+     * @param array  $sysOptions
      * @return class pdo_statement
      */
-    public function query($sSql, $arSysOptions=array())
+    public function query($sql, $sysOptions = [])
     {
         /* формируем ключ для кеширования запроса */
-        $sCacheKey = hash('md5', $sSql);
+        $sCacheKey = hash('md5', $sql);
 
-        if (!empty($arSysOptions['nocache']) || empty(static::$caches[$sCacheKey] )) {
-            if (isset($arSysOptions['type']) && $arSysOptions['type'] == 'class' && isset($arSysOptions['classname'])) {
-                $rows = $this->getStorage()->query($sSql, PDO::FETCH_CLASS, $arSysOptions['classname'], array($this));
+        if (!empty($sysOptions['nocache']) || empty(static::$caches[$sCacheKey])) {
+            if (isset($sysOptions['type']) && $sysOptions['type'] == 'class' && isset($sysOptions['classname'])) {
+                $rows = $this->getStorage()->query($sql, PDO::FETCH_CLASS, $sysOptions['classname'], array($this));
             } else {
-                $rows = $this->getStorage()->query($sSql);
+                $rows = $this->getStorage()->query($sql);
             }
 
-            if (empty($arSysOptions['nocache'])) {
+            if (empty($sysOptions['nocache'])) {
                 static::$caches[$sCacheKey] = $rows;
             }
         } else {
             $rows = static::$caches[$sCacheKey];
-
         }//end if else
 
         return $rows;
@@ -994,31 +1006,37 @@ class DB extends Only
 
     /**
      * Делает запрос к БД и возращает массив результатов ввиде массива или класса
-     * @param string $sSql
-     * @param array  $arSysOptions
+     * @param string $sql
+     * @param array  $sysOptions
      *
      * @return array of classes
      */
-    public function queryAll($sSql, $arSysOptions=array() )
+    public function queryAll($sql, $sysOptions = [])
     {
-        $sCacheKey = hash('md5', $sSql);
+        $cacheKey = hash('md5', $sql);
         $rows = null;
 
-        if (! empty($arSysOptions['nocache']) || empty(static::$caches[$sCacheKey] )) {
-            if (isset($arSysOptions['type']) && $arSysOptions['type'] == 'class' && isset($arSysOptions['classname'])) {
-                $st = $this->getStorage()->query($sSql, PDO::FETCH_CLASS, $arSysOptions['classname'], array($this));
+        if (
+            ! empty($sysOptions['nocache'])
+            || empty(static::$caches[$cacheKey])
+        ) {
+            if (
+                isset($sysOptions['type'])
+                && $sysOptions['type'] == 'class'
+                && isset($sysOptions['classname'])
+            ) {
+                $st = $this->getStorage()->query($sql, PDO::FETCH_CLASS, $sysOptions['classname'], [$this]);
             } else {
-                $st = $this->getStorage()->query($sSql, PDO::FETCH_ASSOC);
+                $st = $this->getStorage()->query($sql, PDO::FETCH_ASSOC);
             }
 
-            $rows = $st ? $st->fetchAll() : array() ;
+            $rows = $st ? $st->fetchAll() : [];
 
-            if (empty($arSysOptions['nocache'])) {
-                static::$caches[$sCacheKey] = $rows;
+            if (empty($sysOptions['nocache'])) {
+                static::$caches[$cacheKey] = $rows;
             }
         } else {
-            $rows = static::$caches[$sCacheKey];
-
+            $rows = static::$caches[$cacheKey];
         }//end if else
 
         return $rows;
@@ -1027,7 +1045,13 @@ class DB extends Only
     /* экранирование */
     public function quote($s)
     {
-        return $this->getStorage()->quote($s);
+        return $s === null ? '' : $this->getStorage()->quote($s);
+    }
+
+    public function prepare($sql)
+    {
+        $st = $this->getStorage()->prepare($sql);
+        return $st;
     }
 
     /**
@@ -1037,7 +1061,8 @@ class DB extends Only
      */
     public function execute($sql)
     {
-        return $this->getStorage()->exec($sql);
+        $rows = $this->getStorage()->exec($sql);
+        return $rows;
     }
 
     /**
@@ -1045,7 +1070,7 @@ class DB extends Only
      * @param string $name
      * @return integer
      */
-    public function getLastID($name=null)
+    public function getLastID($name = null)
     {
         return $this->getStorage()->lastInsertId($name);
     }

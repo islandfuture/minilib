@@ -13,7 +13,7 @@ class Config
     {
         static $configs = [];
         if (! isset($configs[$config])) {
-            $fileconfig = App::I()->PATH_APP . '/configs/config.'.$config.'.php';
+            $fileconfig = App::one()->PATH_APP . '/configs/config.'.$config.'.php';
             if (! file_exists($fileconfig)) {
                 return null;
             }

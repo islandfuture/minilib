@@ -1,10 +1,14 @@
 <?php
+
+namespace Example;
+
 /**
  *
  */
 use IFMiniLib;
+use IFMiniLib\Model;
 
-class ModelUsers extends \Model
+class ModelUsers extends Model
 {
 
     /**

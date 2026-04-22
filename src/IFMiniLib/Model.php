@@ -1,6 +1,9 @@
 <?php
 namespace IFMiniLib;
 
+use IFMiniLib\DB;
+use App;
+
 /**
  * Класс для работы с объектами в базе. Нужен для описания типов объектов и облегечения
  * работы с рутинными операциями: save, delete
@@ -8,16 +11,25 @@ namespace IFMiniLib;
  * Если у поля проставить тип UUID то нужно задать uidMin и uidMax
  * между которыми будет создаваться случайное значение
  * Если нужно чтобы UUID/GUID - были различны на разных серверах, то нужно
- * в конфиге нужно велючить сдвиг App::I()->needUidOffset == 'yes' и
- * задать величину сдвига, например 2:  App::I()->uidOffset=2
+ * в конфиге нужно велючить сдвиг App::one()->needUidOffset == 'yes' и
+ * задать величину сдвига, например 2:  App::one()->uidOffset=2
  * это будет означать что все случайные числа будут заканчиваться на 2
  */
 class Model implements JsonSerializable
 {
+    public const VALUE_AUTOINC = 'AUTOINC';
+    public const VALUE_UUID = 'UUID';
+    public const VALUE_GUID = 'GUID';
+    public const VALUE_VALUE = 'VALUE';
+    public const VALUE_NONE = 'NONE';
+
+    public $uidMin = 100000000000;
+    public $uidMax = 999999999999;
+
     /**
      * @var string $lastError последнее сообщение об ошибке
      */
-    public static $lastError='';
+    public static $lastError = '';
 
     /**
      * @var boolean если запрос был с частью полей - то сохранять это нельзя
@@ -31,30 +43,32 @@ class Model implements JsonSerializable
     public $isNewRecord     = false;
 
     /**
-     * @var array $arFields - массив название и значений полей
+     * @var array $fields - массив название и значений полей
      */
-    protected $arFields     = array();
+    protected $fields     = [];
+
+
 
     public function __destruct()
     {
-        $this->arFields = null;
+        $this->fields = null;
         return true;
     }
 
     /**
-     * @param array $arFields поля для инициализации объекта
+     * @param array $fields поля для инициализации объекта
      */
-    public function __construct($arFields = array())
+    public function __construct($fields = [])
     {
         /* если начальных данных нет, то создадим массив с пустыми данными */
-        if (sizeof($this->arFields) == 0) {
-            $this->arFields = static::getClearFields();
+        if (sizeof($this->fields) == 0) {
+            $this->fields = static::getClearFields();
         }
 
-        if (is_array($arFields) && sizeof($arFields) > 0) {
-            foreach ($arFields as $key => $value) {
-                if (key_exists($key, $this->arFields)) {
-                    $this->arFields[$key] = $value;
+        if (is_array($fields) && sizeof($fields) > 0) {
+            foreach ($fields as $key => $value) {
+                if (key_exists($key, $this->fields)) {
+                    $this->fields[$key] = $value;
                 }
             }//end foreach*/
         }
@@ -67,8 +81,8 @@ class Model implements JsonSerializable
     public function __getFormatString()
     {
         $str = "array(\n";
-        foreach ($this->arFields as $key => $value) {
-            $str .= "\t'$key' => " . DB::I()->quote($value) . ",\n";
+        foreach ($this->fields as $key => $value) {
+            $str .= "\t'$key' => " . DB::one()->quote($value) . ",\n";
         }//end foreach
         $str .= ")\n";
 
@@ -81,7 +95,7 @@ class Model implements JsonSerializable
      */
     public function __getFields()
     {
-        return $this->arFields;
+        return $this->fields;
     }
 
     /**
@@ -109,7 +123,7 @@ class Model implements JsonSerializable
      */
     public static function getRules()
     {
-        return array();
+        return [];
     }
 
     /**
@@ -122,13 +136,13 @@ class Model implements JsonSerializable
 
     public static function getRelations()
     {
-        return array();
+        return [];
     }
 
     /* сделана на будущее */
     public static function getTypes()
     {
-        return array();
+        return [];
     }
 
     /* @return возвращает название первичного ключа */
@@ -140,7 +154,7 @@ class Model implements JsonSerializable
     /* значение ключа по умолчанию */
     public static function getIdDefault()
     {
-        return 'AUTOINC'; // UUID, VALUE
+        return self::VALUE_AUTOINC;
     }
 
     /**
@@ -151,8 +165,8 @@ class Model implements JsonSerializable
     public static function is($name)
     {
         $result = false;
-        $arFields = static::getClearFields();
-        if (key_exists($name, $arFields)) {
+        $fields = static::getClearFields();
+        if (key_exists($name, $fields)) {
             $result = true;
         } else {
             $relations = static::getRelations();
@@ -175,8 +189,8 @@ class Model implements JsonSerializable
             return null;
         }
 
-        if (key_exists($name, $this->arFields)) {
-            return $this->arFields[$name];
+        if (key_exists($name, $this->fields)) {
+            return $this->fields[$name];
         }
 
         $arTrace = debug_backtrace();
@@ -191,12 +205,12 @@ class Model implements JsonSerializable
      */
     public function __set($name, $val)
     {
-        if (sizeof($this->arFields) == 0) {
-            $this->arFields = $this->getClearFields();
+        if (sizeof($this->fields) == 0) {
+            $this->fields = $this->getClearFields();
         }
 
-        if (key_exists($name, $this->arFields)) {
-            $this->arFields[$name] = $val;
+        if (key_exists($name, $this->fields)) {
+            $this->fields[$name] = $val;
         } else {
             $arBackTrace = debug_backtrace();
             $arLast = $arBackTrace[0];
@@ -206,14 +220,13 @@ class Model implements JsonSerializable
 
     public function __isset($name)
     {
-        return isset($this->arFields[$name]);
+        return isset($this->fields[$name]);
     }
-
 
     public function __unset($name)
     {
-        if (isset($this->arFields[$name])) {
-            $this->arFields[$name] = null;
+        if (isset($this->fields[$name])) {
+            $this->fields[$name] = null;
         }
     }
 
@@ -224,23 +237,21 @@ class Model implements JsonSerializable
      */
     public function getOptionsList($sRelname, $selected = '', $where = null, $sViewField = 'sName', $glue = ' / ')
     {
-        $arRelations = $this->$sRelname(false); // $this->getRelations();
-        $arResult = array();
+        $relations = $this->$sRelname(false); // $this->getRelations();
+        $result = [];
 
-        if ($arRelations) {
-
-            foreach ($arRelations as $idx => $mRelation) {
+        if ($relations) {
+            foreach ($relations as $idx => $mRelation) {
                 if (is_array($mRelation)) {
-                    $arResult[] = '<option value="' . $idx . '" ' . ($idx == $selected ? 'selected="selected"' : '') . '>' . $mRelation[0] . '</option>';
+                    $result[] = '<option value="' . $idx . '" ' . ($idx == $selected ? 'selected="selected"' : '') . '>' . $mRelation[0] . '</option>';
                 } else {
                     $sKey = $mRelation::getIdName();
-                    $arResult[] = '<option value="' . $mRelation->{$sKey} . '" ' . ($mRelation->{$sKey} == $selected ? 'selected="selected"' : '') . '>' . $mRelation->{$sViewField} . '</option>';
+                    $result[] = '<option value="' . $mRelation->{$sKey} . '" ' . ($mRelation->{$sKey} == $selected ? 'selected="selected"' : '') . '>' . $mRelation->{$sViewField} . '</option>';
                 }
             }/* end foreach */
-
         }
 
-        return implode("\n", $arResult);
+        return implode("\n", $result);
     }
     //end function
 
@@ -250,21 +261,23 @@ class Model implements JsonSerializable
      * @param boolean $isClearEmpty - очищать переменные, если передано пустое значение
      * @param boolean $isSetNull - устанавливать ли в нуль значение или игнорировать его
      **/
-    public function attributes($params, $isClearEmpty = true, $isSetNull = false )
+    public function attributes($params, $isClearEmpty = true, $isSetNull = false)
     {
         $fields = $this->getClearFields();
 
         foreach ($fields as $key => $val) {
-            if (isset($params[$key])
+            if (
+                isset($params[$key])
                 && ($params[$key] != ''
                 || $isClearEmpty)
             ) {
-                if ($isSetNull
+                if (
+                    $isSetNull
                     && $params[$key] == ''
                 ) {
-                    $this->arFields[$key] = null;
+                    $this->fields[$key] = null;
                 } else {
-                    $this->arFields[$key] = $params[$key];
+                    $this->fields[$key] = $params[$key];
                 }
             }
         }//end foreach
@@ -275,114 +288,117 @@ class Model implements JsonSerializable
      * Удалить текущий объект из БД
      * Если определена функции beforeDelete, то она будет вызвана перед удалением, а afterDelete - после удаления записи в БД
      */
-    public function delete($arParams = array())
+    public function delete($params = [])
     {
         $bTransaction = false;
 
         /*
          * Проверяем параметры для передачи в методы before_delete и after_delete
          */
-        if (! isset($arParams['before'])) {
-            $arParams['before'] = false;
+        if (! isset($params['before'])) {
+            $params['before'] = false;
         }
 
-        if (! isset($arParams['after'])) {
-            $arParams['after'] = false;
+        if (! isset($params['after'])) {
+            $params['after'] = false;
         }
 
         /*
          * Выставляем базу и таблицу для запроса
          */
-        if (! empty($arParams['database'])) {
-            $sTable = '`' . $arParams['database'] . '`.`' . static::getTable() . '`';
+        if (! empty($params['database'])) {
+            $table = '`' . $params['database'] . '`.`' . static::getTable() . '`';
         } elseif (static::getDatabase() > '') {
-            $sTable = '`' . static::getDatabase() . '`.`' . static::getTable() . '`';
+            $table = '`' . static::getDatabase() . '`.`' . static::getTable() . '`';
         } else {
-            $sTable = '`'.static::getTable().'`';
+            $table = '`' . static::getTable() . '`';
         }
 
         /*
          * Проверяем необходимость использования транзакции
          */
-        if (isset($arParams['transaction'] ) && $arParams['transaction'] == true) {
+        if (isset($params['transaction']) && $params['transaction'] == true) {
             $bTransaction = true;
-            DB::I()->begin();
+            DB::one()->begin();
         }
 
         /* если есть функция, которую нужно вызвать до удаления - вызываем ее */
-        if (! $this->beforeDelete($arParams['before'])) {
+        if (! $this->beforeDelete($params['before'])) {
             if ($bTransaction) {
-                DB::I()->rollback();
+                DB::one()->rollback();
             }
             return false;
         }
 
         /* удаляем запись */
-        $idKey = static::getIdName();
-        $sql     = "DELETE FROM " . $sTable . " WHERE ".$idKey." = '" . $this->arFields[$idKey] . "' LIMIT 1";
-        $result     = DB::I()->execute($sql);
+        $idKey   = static::getIdName();
+        $sql     = "DELETE FROM " . $table . " WHERE " . $idKey . " = '" . $this->fields[$idKey] . "' LIMIT 1";
+        $result  = DB::one()->execute($sql);
 
         /* очищаем кеш связанный с этим классом/таблицей */
         $className = get_called_class();
         DB::clearInnerCache($className);
 
         if (! $result) {
-                $err = DB::I()->errorInfo();
+            $err = DB::one()->errorInfo();
             if ($err[0] != '00000') {
-                echo "<div class='error'>" . $sql;
-                echo ($err);
-                echo '</div>';
+                App::one()->log('Error in ' . $className . '::delete[' . $sql . ']; ' . print_r($err, true), [], 'error');
             }//end if
         }
 
         /* если удаление прошло успешно */
         if ($result > 0) {
             /* если определен метод, который нужно вызывать после удаления - вызываем его */
-            if ($this->afterDelete($arParams['after']) === false) {
+            if ($this->afterDelete($params['after']) === false) {
                 /* если что-то пошло не так и у нас запущена транзакция, то откатываем удаление */
                 if ($bTransaction) {
-                    DB::I()->rollback();
+                    DB::one()->rollback();
                 }
                 $result = false;
             } else {
                 /* если запущена транзакция, фиксируем ее */
                 if ($bTransaction) {
-                    DB::I()->commit();
+                    DB::one()->commit();
                 }
                 $this->onChange(['action' => 'delete']);
             }
         } elseif ($result === false && $bTransaction) {
             /* если произошла ошибка и определена транзакция - откатываемся */
-            DB::I()->rollback();
+            DB::one()->rollback();
         }
 
         return $result;
     } //end function
 
     /* тригеры событий, которые можно вызывать перед и после удаления и сохранения */
-    protected function beforeDelete($mParams=array())
+    protected function beforeDelete($mParams = [])
     {
         return true;
     }
 
-    protected function afterDelete($mParams=array() )
+    protected function afterDelete($mParams = [])
     {
         return true;
     }
 
-    protected function beforeSave($mParams=array() )
+    protected function beforeSave($mParams = [])
     {
         return true;
     }
 
-    protected function afterSave($mParams=array() )
+    protected function afterSave($mParams = [])
     {
         return true;
     }
 
-    protected function onChange($mParams=array())
+    protected function onChange($mParams = [])
     {
         return true;
+    }
+
+    public function getUid()
+    {
+        return str_replace('.', '', uniqid('', true));
     }
 
     /**
@@ -390,17 +406,16 @@ class Model implements JsonSerializable
      * нужно установить флаг новой записи в TRUE: $obj->isNewRecord = true;
      * @return mixed больше 0, если сохраненно успешно, false если ошибка (ошибка сохраняется в DB::$lastError)
      */
-    public function save($arParams = array() )
+    public function save($params = [])
     {
-
         if ($this->readOnly) {
             return false;
         }
 
-        $values          = array();
-        $names           = array();
+        $values          = [];
+        $names           = [];
         $types           = static::getTypes(); /* for future */
-        $values_upd      = array();
+        $values_secrets  = [];
         $def             = static::getDefault();
         $idname          = static::getIdName();
         $bTransaction    = false;
@@ -413,79 +428,74 @@ class Model implements JsonSerializable
         /*
          * Выставляем базу и таблицу для запроса
          */
-        if (!empty($arParams['sDatabase'])) {
-            $sTable = '`'.$arParams['sDatabase'].'`.`'.static::getTable().'`';
+        if (!empty($params['database'])) {
+            $table = '`' . $params['database'] . '`.`' . static::getTable() . '`';
+        } elseif (static::getDatabase() > '') {
+            $table = '`' . static::getDatabase() . '`.`' . static::getTable() . '`';
+        } else {
+            $table = '`' . static::getTable() . '`';
         }
-        elseif (static::getDatabase() > '') {
-            $sTable = '`'.static::getDatabase().'`.`'.static::getTable().'`';
-        }
-        else
-        {
-            $sTable = '`'.static::getTable().'`';
-        }
-
 
         /*
          * Проверяем параметры для передачи в методы before_save и after_save
          */
-        if (!isset($arParams['before'] )) {
-            $arParams['before'] = false;
+        if (!isset($params['before'])) {
+            $params['before'] = false;
         }
-        if (!isset($arParams['after'] )) {
-            $arParams['after'] = false;
+        if (!isset($params['after'])) {
+            $params['after'] = false;
         }
 
         /*
          * Проверяем необходимость использования транзакции
          */
-        if (isset($arParams['transaction'] ) && $arParams['transaction'] == true) {
+        if (isset($params['transaction']) && $params['transaction'] == true) {
             $bTransaction = true;
-            DB::I()->begin();
+            DB::one()->begin();
         }
 
-        if (! $this->beforeSave($arParams['before'])) {
+        if (! $this->beforeSave($params['before'])) {
             if ($bTransaction) {
-                DB::I()->rollback();
+                DB::one()->rollback();
             }
             return false;
         }
 
-        foreach ($this->arFields as $key => $value) {
+        foreach ($this->fields as $key => $value) {
             $names[$key] = $key;
-
             if ($value === null && $key != $idname) {
-                if (isset($def[$key] )) {
-                    if (in_array($def[$key], array( 'CURRENT_TIMESTAMP', 'now()', 'NOW()', 'NULL' ))) {
-                        $values[$key]         = $def[$key];
-                        $values_upd[$key]     = "`" . $key . "`=" . $def[$key];
-                    } elseif ($def[$key] == 'UUID') {
-                        do
-                        {
-                            $uid = mt_rand($this->uidMin, $this->uidMax);
-                            if (App::I()->needUidOffset == 'yes' && App::I()->uidOffset > 0) {
-                                $uid = substr(''.$uid, -1).App::I()->uidOffset;
+                if (isset($def[$key])) {
+                    if (in_array($def[$key], array( 'CURRENT_TIMESTAMP', 'CURRENT_TIMESTAMP(4)', 'now()', 'NOW()', 'NULL' ))) {
+                        $values[$key] = $def[$key];
+                    } elseif (in_array($def[$key], [self::VALUE_UUID, self::VALUE_GUID])) {
+                        $try = 0;
+                        do {
+                            if ($def[$key] == self::VALUE_UUID) {
+                                $uid = mt_rand($this->uidMin, $this->uidMax);
+                            } elseif ($def[$key] == self::VALUE_GUID) {
+                                $uid = $this->genUid();
                             }
-                            $isExists = DB::getCountAll(
-                                array(
-                                    'sDatabase' => $this->getDatabase(),
-                                    'sModel' => get_called_class(),
-                                    'arFilter' => array(
-                                        $key => array('=' => $uid)
-                                    )
-                                )
-                            );
-                        }
-                        while($isExists);
-                        $values[$key]         = "'" . $uid . "'"; //$value;
-                        $values_upd[$key]     = "`" . $key . "`=" . $values[$key];
+                            if (App::one()->needUidOffset == 'yes' && App::one()->uidOffset > 0) {
+                                $uid = substr('' . $uid, 0, -1) . App::one()->uidOffset;
+                            }
+                            $isExists = DB::getCountAll([
+                                'database' => $this->getDatabase(),
+                                'model' => get_called_class(),
+                                'filter' => [
+                                    $key => ['=' => $uid]
+                                ]
+                            ]);
+                            $try++;
+                            if ($try == 5) {
+                                App::one()->log("Many attempts to exclude " . $key . " duplicates (" . $def[$key] . " try:{$try})", ['duplicateUid' => $uid, 'key' => $key, 'table' => $sTable], 'error');
+                            }
+                        } while ($isExists);
+                        $values[$key] = $uid;
                         $this->__set($key, $uid);
                     } else {
-                        $values[$key]         = DB::I()->quote($def[$key]); //$value;
-                        $values_upd[$key]     = "`" . $key . "`=" . $values[$key];
+                        $values[$key] = $def[$key];
                     }
-                    //echo $key.'-';
                 } else {
-                    //$values[$key] = 'NULL';
                     unset($names[$key]);
                 }
             } else {
@@ -493,105 +503,131 @@ class Model implements JsonSerializable
                     $value = base64_encode(json_encode($value));
                 }
 
-                if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields'])) {
-                    $value = "AES_ENCRYPT(".DB::I()->quote($value).",UNHEX('".$arParams['securesecret']."'))";
-                    $values[$key] = $value;
+                if (!empty($params['securesecret']) && !empty($params['securefields']) && in_array($key, $params['securefields'])) {
+                    unset($names[$key]);
+                    $values_secrets[$key] = $value;
                 } else {
-                    $values[$key] = DB::I()->quote($value);
+                    $values[$key] = $value;
                 }
-
-                if ($key != $idname || ($def != 'UUID' && $def != 'AUTOINC' )) {
-                    $values_upd[$key] = "`" . $key . "`=" . $values[$key];
-                }// end if
             }
         }//end foreach
 
         if ($this->isNewRecord) {
-
-            if (empty($values[$idname] ) || $values[$idname] == "''") {
-                switch ($this->getIdDefault()) {
-                case 'UUID':
-                    do
-                    {
-                        $uid = mt_rand($this->uidMin, $this->uidMax);
-                        if (App::I()->needUidOffset == 'yes' && App::I()->uidOffset > 0) {
-                            $uid = substr(''.$uid, -1).App::I()->uidOffset;
-                        }
-                        $isExists = DB::getCountAll(
-                            array(
-                                'sDatabase' => $this->getDatabase(),
-                                'sModel' => get_called_class(),
-                                'arFilter' => array(
-                                    $idname => array('=' => $uid)
-                                )
-                            )
-                        );
-                    }
-                    while($isExists);
-
-                    $values[$idname] = "'" . $uid . "'";
-                    $this->$idname = $uid;
-                    break;
-
-                case 'GUID':
+            if (empty($values[$idname]) || $values[$idname] == "''") {
+                $idDefaultType = $this->getIdDefault();
+                if (in_array($idDefaultType, [self::VALUE_UUID, self::VALUE_GUID])) {
+                    $try = 0;
                     do {
-                        $uid = str_replace('.', '', uniqid('', true));
-                        if (App::I()->needUidOffset == 'yes' && App::I()->uidOffset > 0) {
-                            $uid = substr(''.$uid, -1).App::I()->uidOffset;
+                        if ($idDefaultType == self::VALUE_UUID) {
+                            $uid = mt_rand($this->uidMin, $this->uidMax);
+                        } elseif ($idDefaultType == self::VALUE_GUID) {
+                            $uid = $this->genUid();
                         }
-                        $isExists = DB::getCountAll(
-                            array(
-                                'sDatabase' => $this->getDatabase(),
-                                'sModel' => get_called_class(),
-                                'arFilter' => array(
-                                    $idname => array('=' => $uid)
-                                )
-                            )
-                        );
-                    } while($isExists);
 
-                    $values[$idname] = "'" . $uid . "'";
+                        if (App::one()->needUidOffset == 'yes' && App::one()->uidOffset > 0) {
+                            $uid = substr('' . $uid, 0, -1) . App::one()->uidOffset;
+                        }
+                        $isExists = DB::getCountAll([
+                            'database' => $this->getDatabase(),
+                            'model' => get_called_class(),
+                            'filter' => [
+                                $idname => ['=' => $uid]
+                            ]
+                        ]);
+                        $try++;
+                        if ($try == 5) {
+                            App::one()->log("Many attempts to exclude " . $idname . " duplicates (" . $idDefaultType . " try:{$try})", ['duplicateUid' => $uid, 'key' => $idname, 'table' => $sTable], 'error');
+                        }
+                    } while ($isExists);
+                    $values[$idname] = $uid;
                     $this->$idname = $uid;
-                    break;
-                case 'AUTOINC':
-                    $values[$idname] = 'NULL';
-                    break;
-                default:
-                    break;
-                }//end switch
+
+                    $values[$idname] = $uid;
+                    $this->__set($idname, $uid);
+                } elseif ($idDefaultType == self::VALUE_AUTOINC) {
+                    $values[$idname] = null;
+                }
 
                 if ($idname > '') {
                     $names[$idname] = $idname;
                 }
             }
-            $sql = "INSERT INTO " . $sTable . ' (`' . implode('`,`', $names) . "`) VALUES(" . implode(',', $values) . ")";
-        }
-        else
-        {
 
-            $sql = "UPDATE " . $sTable . " SET " .
-                implode(',', $values_upd) .
-                " WHERE $idname = '" . $this->$idname . "' LIMIT 1";
-        }//end if else
+            $keys = array_keys($values);
+            $keys_secrets = array_keys($values_secrets);
+            $sql = "INSERT INTO " . $table . ' (`'
+                    . implode('`,`', $keys)
+                    . (sizeof($keys_secrets) > 0 ? '`,`' . implode('`,`', $keys_secrets) : '')
+                . "`) VALUES(:"
+                    . implode(', :', $keys)
+                    . (sizeof($keys_secrets) > 0 ? ', :' . implode(', :', $keys_secrets) : '')
+                . ")";
 
-        //App::I()->log($sql, 'debug');
-
-        $result = DB::I()->execute($sql);
-        DB::clearInnerCache($className);
-
-        if($result !== false) {
-
-            if ($result === 0) {
-                $err = DB::I()->errorInfo();
-                if ($err[0] != '00000') {
-                    echo "<div class='error'>" . $sql;
-                    var_dump($err);
-                    echo '</div>';
+            if (isset($params['onduplicateupdate']) && isset($values[$params['onduplicateupdate']])) {
+                $sql .= " ON DUPLICATE KEY UPDATE `" . $params['onduplicateupdate'] . "` = :" . $params['onduplicateupdate'];
+            } elseif (isset($params['onduplicateupdateall'])) {
+                $updateKeys = [];
+                foreach ($keys as $lkey) {
+                    if ($lkey == $idname) {
+                        continue;
+                    }
+                    $updateKeys[] = "`$lkey` = VALUES(`$lkey`)";
+                }
+                $sql .= " ON DUPLICATE KEY UPDATE " . implode(',', $updateKeys); //ON DUPLICATE KEY UPDATE `a`=VALUES(`a`), `b`=VALUES(`b`), `c`=VALUES(`c`)
+            }
+        } else {
+            $upd = [];
+            foreach ($values as $key => $value) {
+                if (
+                    $key == $idname
+                    && (
+                        !isset($def[$key])
+                        || in_array($def[$key], [self::VALUE_AUTOINC, self::VALUE_UUID, self::VALUE_GUID])
+                    )
+                ) {
+                    continue;
+                }
+                $upd[] = $key . ' = :' . $key;
+            }
+            if (sizeof($values_secrets) > 0) {
+                foreach ($values_secrets as $key => $value) {
+                    if (
+                        $key == $idname
+                        && (
+                            !isset($def[$key])
+                            || in_array($def[$key], [self::VALUE_AUTOINC, self::VALUE_UUID, self::VALUE_GUID])
+                        )
+                    ) {
+                        continue;
+                    }
+                    $upd[] = $key . " = AES_ENCRYPT(:" . $key . ", UNHEX('" . $params['securesecret'] . "'))";
                 }
             }
 
-            if (static::getIdDefault() == 'AUTOINC' && $this->isNewRecord) {
-                $this->__set($idname, DB::I()->getLastID());
+            $sql = "UPDATE " . $table . " SET "
+                . implode(', ', $upd)
+                . " WHERE " . $idname . ' = :' . $idname
+                . " LIMIT 1";
+        }//end if else
+
+        $st = DB::one()->prepare($sql);
+        $result = false;
+        if ($st) {
+            $result = $st->execute($values);
+        }
+
+        DB::clearInnerCache($className);
+
+        if ($result !== false) {
+            if ($result === 0) {
+                $err = DB::one()->errorInfo();
+                if ($err[0] != '00000') {
+                    App::one()->log('Error in ' . $className . '::save;', ['debug' => print_r($err, true), 'sql' => $sql], 'error');
+                }
+            }
+
+            if (static::getIdDefault() == self::VALUE_AUTOINC && $this->isNewRecord) {
+                $this->__set($idname, DB::one()->getLastID());
             }
 
             $result = true;
@@ -599,101 +635,119 @@ class Model implements JsonSerializable
             $result = false;
         }
 
-        if (! $result) {
+        if (!$result) {
             //@todo вставить добавление ошибок возникших при сохранении
         }
 
         if ($result) {
-            if (false === $this->afterSave($arParams['after'])) {
+            if (false === $this->afterSave($params['after'])) {
                 if ($bTransaction) {
-                    DB::I()->rollback();
+                    DB::one()->rollback();
                 }
                 return false;
             } else {
                 if ($bTransaction) {
-                    DB::I()->commit();
+                    DB::one()->commit();
                 }
 
-                // if ($this->isNewRecord) {
-                //     $sql = str_replace('VALUES(NULL', "VALUES('".$this->__get($idname)."'", $sql);
-                // }
-                $this->onChange(/*[
+                $this->onChange(
+                /*[
                     'sql' => $sql
-                ]*/);
+                ]*/
+                );
             }
             $this->isNewRecord = false;
         } else {
             if ($bTransaction) {
-                DB::I()->rollback();
+                DB::one()->rollback();
             }
         }
         return $result;
     }
 
 
-    public function saveField($key, $arParams=array())
+    public function saveField($key, $arams = [])
     {
         $types           = static::getTypes(); // for future
-        $values_upd      = '';
+        $values          = [];
+        $values_secrets  = [];
         $def             = static::getDefault();
         $idname          = static::getIdName();
         $bTransaction    = false;
         $className = get_called_class();
 
-        if (! static::is($key)) {
+        if (!static::is($key) || $key == $idname) {
             return false;
         }
 
         $value = $this->__get($key);
 
         // Выставляем базу и таблицу для запроса
-        if (!empty($arParams['sDatabase'])) {
-            $sTable = '`'.$arParams['sDatabase'].'`.`'.static::getTable().'`';
+        if (!empty($arams['database'])) {
+            $table = '`' . $arams['database'] . '`.`' . static::getTable() . '`';
         } elseif (static::getDatabase() > '') {
-            $sTable = '`'.static::getDatabase().'`.`'.static::getTable().'`';
+            $table = '`' . static::getDatabase() . '`.`' . static::getTable() . '`';
         } else {
-            $sTable = '`'.static::getTable().'`';
+            $table = '`' . static::getTable() . '`';
         }
 
         if ($value === null && $key != $idname) {
             if (isset($def[$key])) {
-                if (in_array($def[$key], [ 'CURRENT_TIMESTAMP', 'now()', 'NOW()', 'NULL' ])) {
-                    $values_upd     = "`" . $key . "`=" . $def[$key];
-                } else {
-                    $value         = DB::I()->quote($def[$key]); //$value;
-                    $values_upd     = "`" . $key . "`=" . $value;
-                }
+                $values[$key] = $def[$key];
+            } else {
+                $values[$key] = null;
             }
         } else {
             if (is_array($value)) {
                 $value = base64_encode(json_encode($value));
             }
 
-            if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields'])) {
-                $value = "AES_ENCRYPT(".DB::I()->quote($value).",UNHEX('".$arParams['securesecret']."'))";
+            if (
+                !empty($params['securesecret'])
+                && !empty($params['securefields'])
+                && in_array($key, $params['securefields'])
+            ) {
+                $values_secrets[$key] = $value;
             } else {
-                $value = DB::I()->quote($value);
+                $values[$key] = $value;
             }
-
-            if ($key != $idname || ($def != 'UUID' && $def != 'AUTOINC')) {
-                $values_upd = "`" . $key . "`=" . $value;
-            }// end if
         }
 
         $result = 0;
-        if ($values_upd > '') {
-            if ($key != 'servertime' && static::is('servertime') && static::is('serverid')) {
-                $values_upd .= ", `servertime`='" . (string)microtime(true) . "'";
-                if (empty($arPairs['serverid'])) {
-                    $values_upd .= ", `serverid`='" . App::I()->serverid . "'";
+        if (sizeof($values) + sizeof($values_secrets) > 0) {
+            if ($key != 'serverTS' && static::is('serverTS') && static::is('serverId')) {
+                $values['serverTS'] = (string)microtime(true);
+                if ($key != 'serverId' && App::one()->serverId > '' && $this->serverId !== App::one()->serverId) {
+                    $values['serverId'] = App::one()->serverId;
                 }
             }
 
-            $sql = "UPDATE " . $sTable . " SET " . $values_upd .
-                    " WHERE $idname = '" . $this->$idname . "' ";
+            $upd = [];
+            foreach ($values as $key => $value) {
+                if ($key == $idname) {
+                    continue;
+                }
+                $upd[] = $key . ' = :' . $key;
+            }
+            if (sizeof($values_secrets) > 0) {
+                foreach ($values_secrets as $key => $value) {
+                    if ($key == $idname) {
+                        continue;
+                    }
+                    $upd[] = $key . " = AES_ENCRYPT(:" . $key . ", UNHEX('" . $arParams['securesecret'] . "'))";
+                }
+            }
 
-            // выполняем запрос на увеличение
-            $result = DB::I()->execute($sql);
+            $sql = "UPDATE " . $sTable . 
+                " SET " . implode(", ", $upd) .
+                " WHERE $idname = :" . $idname;
+            $values[$idname] = $this->$idname;
+
+            $st = DB::one()->prepare($sql);
+            $result = false;
+            if ($st) {
+                $result = $st->execute($values);
+            }
         }
         // очищаем кеш
         DB::clearInnerCache($className);
@@ -701,8 +755,8 @@ class Model implements JsonSerializable
         // делаем запрос актуальных данных
         $tmp = DB::getOne(
             [
-                'sModel' => $className,
-                'arFilter' => [
+                'model' => $className,
+                'filter' => [
                     $idname => ['=' => $this->$idname]
                 ]
             ]
@@ -714,41 +768,45 @@ class Model implements JsonSerializable
         return $result;
     }
 
-    public function saveFields($arFields, $arParams=[])
+    public function saveFields($fields, $params = [])
     {
         $types           = static::getTypes(); // for future
-        $values_upd      = '';
+        $values          = [];
+        $values_secrets  = [];
         $def             = static::getDefault();
         $idname          = static::getIdName();
         $bTransaction    = false;
         $className = get_called_class();
 
-        if (! is_array($arFields) || sizeof($arFields) == 0) {
+        if (! is_array($fields) || sizeof($fields) == 0) {
             return false;
         }
 
         // Выставляем базу и таблицу для запроса
-        if (!empty($arParams['sDatabase'])) {
-            $sTable = '`'.$arParams['sDatabase'].'`.`'.static::getTable().'`';
+        if (!empty($params['database'])) {
+            $table = '`' . $params['database'] . '`.`' . static::getTable() . '`';
         } elseif (static::getDatabase() > '') {
-            $sTable = '`'.static::getDatabase().'`.`'.static::getTable().'`';
+            $table = '`' . static::getDatabase() . '`.`' . static::getTable() . '`';
         } else {
-            $sTable = '`'.static::getTable().'`';
+            $table = '`' . static::getTable() . '`';
         }
 
         if (
-            ! in_array('servertime', $arFields)
-            && static::is('servertime')
-            && static::is('serverid')
+            !in_array('serverTS', $fields)
+            && static::is('serverTS')
+            && static::is('serverId')
         ) {
-            $arFields[] = 'servertime';
-            $this->__set('servertime', (string)microtime(true));
-            $arFields[] = 'serverid';
-            $this->__set('serverid', App::I()->serverid);
+            $fields[] = 'serverTS';
+            $this->__set('serverTS', (string)microtime(true));
+            $values['serverTS'] = $this->serverTS;
+            if ($this->serverId !== App::one()->serverId) {
+                $fields[] = 'serverId';
+                $this->__set('serverId', App::one()->serverId);
+                $values['serverId'] = $this->serverId;
+            }
         }
 
-        $values_upd = [];
-        foreach($arFields as $key) {
+        foreach ($fields as $key) {
             if (! static::is($key)) {
                 continue;
             }
@@ -756,10 +814,10 @@ class Model implements JsonSerializable
 
             if ($value === null && $key != $idname) {
                 if (isset($def[$key])) {
-                    if (in_array($def[$key], [ 'CURRENT_TIMESTAMP', 'now()', 'NOW()', 'NULL' ])) {
-                        $values_upd[]     = "`" . $key . "`=" . $def[$key];
+                    if (in_array($def[$key], [ 'CURRENT_TIMESTAMP', 'CURRENT_TIMESTAMP(4)', 'now()', 'NOW()', 'NULL' ])) {
+                        $values[$key] = $def[$key];
                     } else {
-                        $values_upd[]     = "`" . $key . "`=" . $value;
+                        $values[$key] = $value;
                     }
                 }
             } else {
@@ -768,24 +826,40 @@ class Model implements JsonSerializable
                 }
 
                 if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields'])) {
-                    $value = "AES_ENCRYPT(".DB::I()->quote($value).",UNHEX('".$arParams['securesecret']."'))";
+                    $values_secrets[$key] = $value;
                 } else {
-                    $value = DB::I()->quote($value);
+                    $values[$key] = $value;
                 }
-
-                if ($key != $idname || ($def != 'UUID' && $def != 'AUTOINC')) {
-                    $values_upd[] = "`" . $key . "`=" . $value;
-                }// end if
             }
         }
 
         $result = 0;
-        if (sizeof($values_upd) > 0) {
-            $sql = "UPDATE " . $sTable . " SET " . implode(', ', $values_upd) .
-                    " WHERE $idname = '" . $this->$idname . "' ";
+        if (sizeof($values) + sizeof($values_secrets) > 0) {
+            $upd = [];
+            foreach ($values as $key => $value) {
+                if ($key == $idname) {
+                    continue;
+                }
+                $upd[] = $key . ' = :' . $key;
+            }
+            if (sizeof($values_secrets) > 0) {
+                foreach ($values_secrets as $key => $value) {
+                    if ($key == $idname) {
+                        continue;
+                    }
+                    $upd[] = $key . " = AES_ENCRYPT(:" . $key . ", UNHEX('" . $arParams['securesecret'] . "'))";
+                }
+            }
 
-            // выполняем запрос на увеличение
-            $result = DB::I()->execute($sql);
+            $sql = "UPDATE " . $sTable . " SET " . implode(", ", $upd) .
+                    " WHERE $idname = :" . $idname;
+            $values[$idname] = $this->$idname;
+
+            $st = DB::one()->prepare($sql);
+            $result = false;
+            if ($st) {
+                $result = $st->execute($values);
+            }
         } else {
             return false;
         }
@@ -794,18 +868,16 @@ class Model implements JsonSerializable
         DB::clearInnerCache($className);
 
         // делаем запрос актуальных данных
-        $tmp = DB::getOne(
-            [
-                'sModel' => $className,
-                'arFilter' => [
-                    $idname => ['=' => $this->$idname]
-                ]
+        $tmp = DB::getOne([
+            'model' => $className,
+            'filter' => [
+                $idname => ['=' => $this->$idname]
             ]
-        );
+        ]);
         if ($tmp) {
             $this->attributes($tmp->__getFields());
         }
-        $this->onChange(['fields' => $arFields]);
+        $this->onChange(['fields' => $fields]);
 
         return $result;
     }
@@ -813,12 +885,12 @@ class Model implements JsonSerializable
     // @return Array
     public static function getClearFields()
     {
-        die( 'bred');
+        die('bred');
     }
 
     public static function getDefault()
     {
-        return array();
+        return [];
     }
 
     /**
@@ -828,15 +900,13 @@ class Model implements JsonSerializable
      * @param string условия для выбора записей подлежащих изменению
      * @return integer возвращает актуальное значение счетчика
      **/
-    public function increment($field, $step=1, $where='')
+    public function increment($field, $step = 1, $where = '')
     {
         $className = get_called_class();
         if (static::getDatabase() > '') {
-            $sTable = '`'.static::getDatabase().'`.`'.static::getTable().'`';
-        }
-        else
-        {
-            $sTable = '`'.static::getTable().'`';
+            $table = '`' . static::getDatabase() . '`.`' . static::getTable() . '`';
+        } else {
+            $table = '`' . static::getTable() . '`';
         }
         $idname = static::getIdName();
 
@@ -844,33 +914,44 @@ class Model implements JsonSerializable
             return false;
         }
 
-        if ($where > '' ) { $where = ' AND '.$where; }
+        if ($where > '') {
+            $where = ' AND ' . $where;
+        }
 
         $addupdate = '';
-        if (static::is('servertime') && static::is('serverid')) {
-            $this->serverid = App::I()->serverid;
-            $this->servertime = (string)microtime(true);
-            $addupdate = ", serverid='".App::I()->serverid."', servertime='".$this->servertime."' ";
+        $upd = "`" . $field . "` = `" . $field . "` + " . $step;
+        $values = [];
+        if (static::is('serverTS') && static::is('serverId')) {
+            $this->serverId = $values['serverId'] = App::one()->serverid;
+            $this->serverTS = $values['serverTS'] = (string)microtime(true);
+            $upd .= ", `serverTS` = :serverTS, `serverId` = :serverId ";
         }
-        $sql = "UPDATE " . $sTable . " SET `".$field."`=`".$field."` + '".$step."'" . $addupdate .
-                " WHERE $idname = '" . $this->$idname . "'".$where;
+        $values[$idname] = $this->$idname;
 
-        /* выполняем запрос на увеличение */
-        $result = DB::I()->execute($sql);
+        $sql = "UPDATE " . $table . " SET " . $upd .
+                " WHERE $idname = :" . $idname . " " . $where;
+
+        $st = DB::one()->prepare($sql);
+        $result = false;
+        if ($st) {
+            $result = $st->execute($values);
+        }
 
         /* очищаем кеш */
         DB::clearInnerCache($className);
 
         /* делаем запрос актуальных данных */
-        $tmp = DB::getOne(array(
-                'sModel' => $className,
-                'arFilter' => array(
-                    $idname => array('=' => $this->$idname)
-                )
-            )
-        );
+        $tmp = DB::getOne([
+            'model' => $className,
+            'filter' => [
+                $idname => ['=' => $this->$idname]
+            ]
+        ]);
 
-        $this->$field = $tmp->$field;
+        if ($tmp) {
+            $this->attributes($tmp->__getFields());
+        }
+
         $this->onChange(['fields' => [$field]]);
         return $result;
     }
@@ -880,11 +961,9 @@ class Model implements JsonSerializable
     {
         $className = get_called_class();
         if (static::getDatabase() > '') {
-            $sTable = '`'.static::getDatabase().'`.`'.static::getTable().'`';
-        }
-        else
-        {
-            $sTable = '`'.static::getTable().'`';
+            $table = '`' . static::getDatabase() . '`.`' . static::getTable() . '`';
+        } else {
+            $table = '`' . static::getTable() . '`';
         }
         $idname = static::getIdName();
 
@@ -892,30 +971,44 @@ class Model implements JsonSerializable
             return false;
         }
 
-        if ($where > '' ) { $where = ' AND '.$where; }
-
-        $addupdate = '';
-        if (static::is('servertime') && static::is('serverid')) {
-            $this->serverid = App::I()->serverid;
-            $this->servertime = (string)microtime(true);
-            $addupdate = ", serverid='".App::I()->serverid."', servertime='".$this->servertime."' ";
+        if ($where > '') {
+            $where = ' AND ' . $where;
         }
 
-        $sql = "UPDATE " . $sTable . " SET `".$field."`=`".$field."` - '".$step."'" . $addupdate .
-                " WHERE $idname = '" . $this->$idname . "'".$where;
+        $addupdate = '';
+        $upd = "`" . $field . "` = `" . $field . "` - " . $step;
+        $values = [];
+        if (static::is('serverTS') && static::is('serverId')) {
+            $this->serverId = $values['serverId'] = App::one()->serverid;
+            $this->serverTS = $values['serverTS'] = (string)microtime(true);
+            $upd .= ", `serverTS` = :serverTS, `serverId` = :serverId ";
+        }
+        $values[$idname] = $this->$idname;
 
-        $result = DB::I()->execute($sql);
+        $sql = "UPDATE " . $table . " SET " . $upd .
+                " WHERE $idname = :" . $idname . " " . $where;
+
+        $st = DB::one()->prepare($sql);
+        $result = false;
+        if ($st) {
+            $result = $st->execute($values);
+        }
+
+        /* очищаем кеш */
         DB::clearInnerCache($className);
 
+        /* делаем запрос актуальных данных */
+        $tmp = DB::getOne([
+            'model' => $className,
+            'filter' => [
+                $idname => ['=' => $this->$idname]
+            ]
+        ]);
 
-        $tmp = DB::getOne(array(
-                'sModel' => $className,
-                'arFilter' => array(
-                    $idname => array('=' => $this->$idname)
-                )
-            )
-        );
-        $this->$field = $tmp->$field;
+        if ($tmp) {
+            $this->attributes($tmp->__getFields());
+        }
+
         $this->onChange(['fields' => [$field]]);
         return $result;
     }
@@ -945,17 +1038,26 @@ class Model implements JsonSerializable
      */
     public function getTextToHtml($name)
     {
-        if (isset($this->arFields[$name])) {
-            return str_replace("\n", '<br />', $this->arFields[$name]);
+        if (isset($this->fields[$name])) {
+            return str_replace("\n", '<br />', $this->fields[$name]);
         }
         return '';
     }
 
     public function validate()
     {
-        return Validator::isValidateModel($this);
-    }
+        if (!Validator::one()->validate($this->__getFields(), static::getRules())) {
+            $errors = Validator::one()->getErrors();
+            foreach ($errors as $field => $fieldErrors) {
+                $this->addError(implode(', ', $fieldErrors), $field);
+            }
+            return false;
+        } else {
+            $this->attributes(Validator::one()->data);
+        }
 
+        return true;
+    }
     /** error functions **/
 
     /**
@@ -964,7 +1066,7 @@ class Model implements JsonSerializable
      * @param string $sField      название поля в котором обнаружена ошибка
      * @return Model
      */
-    public function addError($sError, $sField='_')
+    public function addError($sError, $sField = '_')
     {
         DB::addError($sError, get_class($this), $sField);
         return $this;
@@ -975,7 +1077,7 @@ class Model implements JsonSerializable
      * @param string $sField      название поля которое проверяется (нужено указать "_" - для проверки общих ошибок)
      * @return boolean
      */
-    public function isError($sField='_')
+    public function isError($sField = '_')
     {
         return DB::isError(get_class($this), $sField);
     }
@@ -1011,144 +1113,155 @@ class Model implements JsonSerializable
     }
 
     /**
-     * @param $arParams
-     * @param array $arSysOptions
+     * @param $params
+     * @param array $sysOptions
      * @return static
      */
-    public static function getRow($arParams, $arSysOptions=array())
+    public static function getRow($params, $sysOptions = [])
     {
-        $arParams['sModel'] =  get_called_class();
-        return DB::I()->getOne($arParams, $arSysOptions);
+        $params['model'] = get_called_class();
+        return DB::one()->getOne($params, $sysOptions);
     }
 
 
     /**
-     * @param $arParams
-     * @param array $arSysOptions
+     * @param $params
+     * @param array $sysOptions
      * @return static[]
      */
-    public static function getRows($arParams, $arSysOptions=array())
+    public static function getRows($params, $sysOptions = [])
     {
-        $arParams['sModel'] =  get_called_class();
-        return DB::I()->getAll($arParams, $arSysOptions);
+        $params['model'] =  get_called_class();
+        return DB::one()->getAll($params, $sysOptions);
     }
 
-    public static function getCount($arParams, $arSysOptions=array())
+    public static function getCount($params, $sysOptions = [])
     {
-        $arParams['sModel'] =  get_called_class();
-        return DB::I()->getCountAll($arParams, $arSysOptions);
+        $params['model'] =  get_called_class();
+        return DB::one()->getCountAll($params, $sysOptions);
     }
 
-    public static function getMax($field,$arParams, $arSysOptions=array())
+    public static function getMax($field, $params, $sysOptions = [])
     {
-        $arParams['sModel'] =  get_called_class();
-        $arParams['fields'] = '`'.$field.'` as cnt';
-        $arParams['arSort'] = array($field => 'desc');
-        $arParams['iPageSize'] = 1;
-        $arParams['iPage'] = 1;
-        $sSql = DB::generateSelectSQL($arParams);
-        $st = DB::I()->query($sSql, ['nocache' => true]);
+        $params['model'] =  get_called_class();
+        $params['fields'] = '`' . $field . '` as cnt';
+        $params['sort'] = array($field => 'desc');
+        $params['pageSize'] = 1;
+        $params['page'] = 1;
+        $sSql = DB::generateSelectSQL($params);
+        $st = DB::one()->query($sSql, ['nocache' => true]);
         $iResult = false;
         if ($st) {
             $arTmp = $st->fetch(\PDO::FETCH_ASSOC);
             if (isset($arTmp['cnt'])) {
-                $iResult=$arTmp['cnt'];
+                $iResult = $arTmp['cnt'];
             }
         }
 
         return $iResult;
     }
 
-    public static function getMin($field, $arParams, $arSysOptions=array())
+    public static function getMin($field, $params, $sysOptions = [])
     {
-        $arParams['sModel'] =  get_called_class();
-        $arParams['fields'] = 'min('. $field .') as cnt';
-        $sSql = DB::generateSelectSQL($arParams);
-        $st = DB::I()->query($sSql, ['nocache' => true]);
+        $params['model'] =  get_called_class();
+        $params['fields'] = 'min(' . $field . ') as cnt';
+        $sSql = DB::generateSelectSQL($params);
+        $st = DB::one()->query($sSql, ['nocache' => true]);
         $iResult = false;
         if ($st) {
             $arTmp = $st->fetch(\PDO::FETCH_ASSOC);
             if (isset($arTmp['cnt'])) {
-                $iResult=$arTmp['cnt'];
+                $iResult = $arTmp['cnt'];
             }
-
         }
 
         return $iResult;
     }
 
-    public static function getById($id, $arParams=array())
+    public static function getSum($field, $params, $sysOptions = array())
+    {
+        $params['model'] =  get_called_class();
+        $params['fields'] = 'SUM(`' . $field . '`) as sum';
+        $params['pageSize'] = 1;
+        $params['page'] = 1;
+        $sql = DB::generateSelectSQL($params);
+        $st = DB::one()->query($sql, $sysOptions);
+        $iResult = false;
+        if ($st) {
+            $tmp = $st->fetch(\PDO::FETCH_ASSOC);
+            if (isset($tmp['sum'])) {
+                $iResult = $tmp['sum'];
+            }
+        }
+        if ($iResult == false) {
+            $iResult = 0;
+        }
+        return $iResult;
+    }
+
+    public static function getById($id, $sysParams = [])
     {
         $idName = static::getIdName();
-        $sModel =  get_called_class();
-        $arSpecs = array();
-        if (isset($arParams['nocache']) && $arParams['nocache']) {
-            $arSpecs['nocache'] = true;
+        $model =  get_called_class();
+        $specs = [];
+        if (isset($sysParams['nocache']) && $sysParams['nocache']) {
+            $specs['nocache'] = true;
         }
-        if (! empty($arParams['securesecret']) && ! empty($arParams['securefields'])) {
-            return DB::getOne(
-                array(
-                    'sModel' => $sModel,
-                    'arFilter' => array(
-                        $idName => array('=' => intval($id) )
-                    ),
-                    'iPageSize' => 1,
-                    'securesecret' => $arParams['securesecret'],
-                    'securefields' => $arParams['securefields']
-                ), $arSpecs
-            );
+        $params = [
+            'model' => $model,
+            'arFilter' => [
+                $idName => ['=' => $id]
+            ],
+            'pageSize' => 1
+        ];
+
+        if (!empty($sysParams['securesecret']) && !empty($sysParams['securefields'])) {
+            $params['securesecret'] = $sysParams['securesecret'];
+            $params['securefields'] = $sysParams['securefields'];
         }
-        return DB::getOne(
-            array(
-                'sModel' => $sModel,
-                'arFilter' => array(
-                    $idName => array('=' => intval($id) )
-                ),
-                'iPageSize' => 1
-            ), $arSpecs
-        );
+
+        return DB::getOne($params, $specs);
     }
 
-    public function setMaxValue($fieldname, $arParams, $step=1)
+    public function setMaxValue($fieldname, $params, $step = 1)
     {
         if (static::is($fieldname)) {
             $table = static::getTable();
             $idname = static::getIdName();
-            $arParams['fields'] =  '`'.$table.'`.`'.$fieldname.'`';
-            $arParams['sModel'] =  get_called_class();
-            $arParams['arSort'] = [$fieldname => 'desc'];
+            $params['fields'] =  'MAX(`' . $table . '`.`' . $fieldname . '`) as `' . $fieldname . '`';
+            $params['model'] =  get_called_class();
 
-            $sSql = DB::generateSelectSQL($arParams);
+            $values = [];
+            $sql = DB::generateSelectSQL($params, $values);
 
             $addupdate = '';
-            if (static::is('servertime') && static::is('serverid')) {
-                $this->serverid = App::I()->serverid;
-                $this->servertime = (string)microtime(true);
-                $addupdate = ", t0.serverid='".App::I()->serverid."', t0.servertime='".$this->servertime."' ";
+            if (static::is('serverTS') && static::is('serverId')) {
+                $this->serverId = App::one()->serverId;
+                $this->serverTS = (string)microtime(true);
+                $addupdate = ", t0.serverId='" . App::one()->serverId . "', t0.serverTS='" . $this->serverTS . "' ";
             }
 
-            $sql = "UPDATE `" . static::getTable() . "` as t0, (" . $sSql . " LIMIT 1 FOR UPDATE) as t1 SET t0.`".$fieldname."` = t1.`".$fieldname."`+".intval($step). $addupdate . " WHERE `".$idname."` = '".$this->$idname."' ";
+            $sql = "UPDATE `" . static::getTable() . "` as t0, (" . $sql . " LIMIT 1) as t1 SET t0.`" . $fieldname . "` = t1.`" . $fieldname . "`+" . intval($step) . $addupdate . " WHERE `" . $idname . "` = '" . $this->$idname . "' ";
 
             try {
-                $result = DB::I()->execute($sql);
-            } catch (\PDOException $e) {
+                $result = DB::one()->execute($sql);
+            } catch (PDOException $e) {
                 $result = false;
                 $state = $e->getMessage();
                 if (strpos($state, ' Deadlock found when trying to get lock; try restarting transaction') !== false) {
-                    $result = DB::I()->execute($sql);
+                    $result = DB::one()->execute($sql);
                 } else {
                     throw $e;
                 }
             }
-            DB::clearInnerCache(get_called_class());
+            $className =  get_called_class();
+            DB::clearInnerCache($className);
 
             if ($result !== false) {
                 if ($result === 0) {
-                    $err = DB::I()->errorInfo();
+                    $err = DB::one()->errorInfo();
                     if ($err[0] != '00000') {
-                        echo "<div class='error'>" . $sql;
-                        var_dump($err);
-                        echo '</div>';
+                        App::one()->log('Error in ' . $className . '::delete[' . $sql . ']; ' . print_r($err, true), [], 'error');
                     }
                 }
 
@@ -1156,15 +1269,15 @@ class Model implements JsonSerializable
 
                 $tmp = static::getRow(
                     [
-                        'fields' => '`'.$table.'`.`'.$fieldname.'` ',
-                        'arFilter' => [
+                        'fields' => '`' . $table . '`.`' . $fieldname . '` ',
+                        'filter' => [
                             $idname => ['=' => $this->$idname]
                         ]
-                    ],['nocache' => true]
+                    ],
+                    ['nocache' => true]
                 );
                 $this->$fieldname = $tmp->$fieldname;
                 $this->onChange(['fields' => [$fieldname]]);
-
             } else {
                 $result = false;
             }
@@ -1178,8 +1291,142 @@ class Model implements JsonSerializable
         return json_encode($this->__getFields(), JSON_UNESCAPED_UNICODE);
     }
 
+    public function __toArray()
+    {
+        return $this->__getFields();
+    }
+
+    public function __serialize(): array
+    {
+        return $this->__getFields();
+    }
+
+    public function __unserialize(array $data): void
+    {
+        $this->attributes($data);
+    }
+
     public function jsonSerialize() {
         return $this->__getFields();
+    }
+
+    /**
+     * Функция извлекает значение зашифрованного свойства
+     * @param string $param Название параметра
+     * @return mixed|string|null
+     */
+    public function getSecureField(string $param)
+    {
+        if (property_exists($this, '_' . $param)) {
+            // Инициализируем параметр
+            if ($this->{'_' . $param} === null) {
+                //TODO после удаление полей из модели надо убрать обращение к $this->param (заменить на '')
+                if (!empty($this->{'seca_' . $param})) {
+                    $this->{'_' . $param} = App::one()->decryptString($this->{'seca_' . $param}, $this->getSecret());
+                } elseif (!empty($this->$param)) { // TODO после удаление полей из модели надо убрать
+                    $this->{'_' . $param} = base64_decode($this->$param); //TODO после удаление полей из модели надо убрать обращение к $this->param (заменить на '')
+                } else {
+                    $this->{'_' . $param} = '';
+                }
+            }
+
+            return $this->{'_' . $param};
+        }
+
+        return '';
+    }
+
+    public function setSecureFields(array $params)
+    {
+        foreach ($params as $param => $data) {
+            $this->setSecureField($param, $data);
+        }
+    }
+
+    /**
+     * Функция устанавливает значение поля
+     * @param string $param
+     * @param string $data
+     * @return bool
+     * @throws Exception
+     */
+    private function setSecureField(string $param, string $data): bool
+    {
+        if (!property_exists($this, '_' . $param)) {
+            throw new Exception('Property _' . $param . ' does not exist in class ' . get_class($this));
+        }
+
+        $this->{'_' . $param} = $data;
+
+        return true;
+    }
+
+    /**
+     * Метод разбирает хранящийся в $this->fields[$key] (и потенциально закодированный в base64) json в массив,
+     * перезаписывает $this->fields[$key] этим массивом и возвращает его.
+     * Если там и так уже массив - возвращает его в неизменном виде.
+     *
+     * @param string $key Ключ в $this->fields
+     * @return array
+     * @throws \ErrorException
+     */
+    public function getFieldAsArray(string $key): array
+    {
+        if (empty($key)) {
+            return [];
+        }
+
+        if (!array_key_exists($key, $this->fields)) {
+            $trace = debug_backtrace();
+            throw new \ErrorException(
+                'Unknown field ' . get_class($this) . '::$' . $key,
+                E_USER_ERROR,
+                1,
+                $trace[0]['file'],
+                $trace[0]['line']
+            );
+        }
+
+        $value = $this->fields[$key];
+
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (empty($value) || !is_string($value)) {
+            $this->fields[$key] = [];
+            return [];
+        }
+
+        if (substr($value, 0, 1) === '{' || substr($value, 0, 1) === '[') {
+            $value = json_decode($value, true);
+        } else {
+            $value = json_decode(base64_decode($value), true);
+        }
+
+        $this->fields[$key] = $value;
+        return $value;
+    }
+
+    /**
+     * Метод добавляет значение $value с ключом $field в массив $this->fields[$key].
+     * Если в массиве уже есть такой ключ, его значение будет перезаписано.
+     *
+     * @param string $key Ключ поля в $this->fields, в котором хранится массив или json (может быть закодирован в base64)
+     * @param string $field Ключ в массиве
+     * @param mixed $value Значение для добавления/перезаписи
+     * @return void
+     * @throws \ErrorException
+     */
+    public function setArrayFieldValue(string $key, string $field, $value): void
+    {
+        if (empty($key)) {
+            return;
+        }
+
+        $array = $this->getFieldAsArray($key);
+        $array[$field] = $value;
+        $this->fields[$key] = $array;
     }
 }
 //end class
