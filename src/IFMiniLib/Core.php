@@ -13,11 +13,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'Only.php';
  * @example App::one()->init(); // считываем данные из конфига и подготавливаем все для работы
  */
 
+use IFMiniLib\Only;
+use IFMiniLib\ActiveUser;
 
 class Core extends Only
 {
     // объект приложения
     public static $app = null;
+
+    public $nameSpace;
 
     //@var Array массив параметров конфигурации
     private $configs = [];
@@ -78,20 +82,26 @@ class Core extends Only
             $_SERVER = array();
         }
 
-        $sAppCorePath = __DIR__ . DIRECTORY_SEPARATOR;
+        $sAppCorePath = dirname(__DIR__) . '/';
 
         /* DOCUMENT_ROOT must set to public directory */
         if (empty($_SERVER['DOCUMENT_ROOT'])) {
             $reflection = new \ReflectionClass(get_class($this));
-            $sAppPath = dirname($reflection->getFileName());
-            $sRootPath = dirname($sAppPath);
-            $sPublicPath = $_SERVER['DOCUMENT_ROOT'] = $sRootPath . DIRECTORY_SEPARATOR . 'public' ;
+            $sAppPath = dirname($reflection->getFileName()) . '/';
+            $sRootPath = dirname($sAppPath) . '/';
+            $sPublicPath = $_SERVER['DOCUMENT_ROOT'] = $sRootPath . '/' . 'public'  . '/';
         } else {
             $sPublicPath = $_SERVER['DOCUMENT_ROOT'] = realpath($_SERVER['DOCUMENT_ROOT']);
-            $sRootPath = dirname($sPublicPath);
-            $sAppPath  = $sRootPath . DIRECTORY_SEPARATOR . 'app';
+            $sRootPath = dirname($sPublicPath) . '/';
+            $sAppPath  = $sRootPath . 'app' . '/';
         }
 
+        $this->nameSpace = static::class;
+        if (strpos($this->nameSpace, '\\') > 0) {
+            $this->nameSpace = substr($this->nameSpace, 0, strrpos($this->nameSpace, '\\'));
+        } else {
+            $this->nameSpace = '';
+        }
         $sConfig = $sRootPath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'config.php';
 
         /* если нет конфига, то баста - ругаемся */
@@ -116,7 +126,7 @@ class Core extends Only
         $this->configs['PATH_CORE'] = $sAppCorePath;
         $this->configs['PATH_PUBLIC'] = $sPublicPath;
 
-        $sVendorPath = $sRootPath . 'vendor' . DIRECTORY_SEPARATOR;
+        $sVendorPath = $sRootPath . 'vendor' . '/';
         if (empty($this->configs['PATH_VENDOR'])) {
             $this->configs['PATH_VENDOR'] = $sVendorPath;
         }
@@ -125,11 +135,12 @@ class Core extends Only
             $this->configs['PATH_APP'] = $sAppPath;
         }
 
-        $this->configs['PATH_TEMPLATE'] = $this->PATH_ROOT . 'tpl' . DIRECTORY_SEPARATOR;
-        $this->configs['PATH_LAYOUT'] = $this->PATH_ROOT . 'layout' . DIRECTORY_SEPARATOR;
+        $this->configs['PATH_TEMPLATE'] = $this->PATH_ROOT . 'tpl' . '/';
+        $this->configs['PATH_LAYOUT'] = $this->PATH_ROOT . 'layout' . '/';
+        $this->configs['PATH_RESOURCES'] = $this->PATH_ROOT . 'resources' . '/';
 
         // регистрируем автозагрузчик классов
-        spl_autoload_register(array($this, 'appAutoload' ));
+        spl_autoload_register([$this, 'autoloadClasses'], true, true);
 
         $this->startScript = date('Y-m-d H:i:s');
 
@@ -149,7 +160,6 @@ class Core extends Only
         set_exception_handler(array($this, 'appException'));
         register_shutdown_function(array($this,'appShutdown'));
         ignore_user_abort(true);
-
         /* если в приложении нужны сессии, то подклбчаем их */
         if ($this->session && $this->session != 'none' && $this->session != 'auto') {
             /* Сессию можно соединить с классом отвечающим за юзеров */
@@ -168,32 +178,31 @@ class Core extends Only
 
     /**
      * функция для автозагрузки классов
-     * @param sting $className - название класса, который нужно загрузить
+     * @param string $className - название класса, который нужно загрузить
      **/
-    public function appAutoload($className)
+    public function autoloadClasses($className)
     {
         if (! isset($this->configs['include'])) {
             $this->configs['include'] = array();
         }
+        $originalClassName = $className;
+        $className = ltrim(str_replace('\\', '/', $className), '/');
+        if ($this->nameSpace > '' && $this->nameSpace == substr($className, 0, strlen($this->nameSpace))) {
+            $className = substr($className, strlen($this->nameSpace) + 1);
+        }
 
         /* Проверяем, есть ли класс в массиве для автозагрузки классов */
-        if (file_exists( $this->PATH_APP.$className.'.php') ) {
-            require_once $this->PATH_APP.$className.'.php';
+        if (file_exists($this->PATH_APP . $className . '.php') ) {
+            require_once $this->PATH_APP . $className . '.php';
             return true;
-        } elseif (file_exists( $this->PATH_CORE.$className.'.php') ) {
-            require_once $this->PATH_CORE.$className.'.php';
-            return true;
-        } elseif (strpos($className,'\\') !== false && file_exists($this->PATH_APP . str_replace('\\', '/', $className).'.php')) {
-            require_once $this->PATH_APP . str_replace('\\', '/', $className) . '.php';
-            return true;
-        } elseif (strpos($className,'/') !== false && file_exists($this->PATH_APP.$className.'.php')) {
-            require_once $this->PATH_APP.$className.'.php';
+        } elseif (file_exists($this->PATH_CORE . $className . '.php') ) {
+            require_once $this->PATH_CORE . $className . '.php';
             return true;
         } elseif (array_key_exists($className, $this->configs['include'])) {
             if (substr($this->configs['include'][ $className ], 0, 1) == '/') {
                 $sPath = $this->configs['include'][ $className ];
             } else {
-                $sPath = $this->PATH_VENDOR.$this->configs['include'][ $className ];
+                $sPath = $this->PATH_VENDOR . $this->configs['include'][ $className ];
             }
 
             if (file_exists($sPath)) {
@@ -231,42 +240,15 @@ class Core extends Only
     {
         $debugstr = $e->getTraceAsString();
         $pos1 = strpos($debugstr, 'PDO->__construct(');
-        $pos2 = strpos($debugstr, ')', $pos1+5);
+        $pos2 = strpos($debugstr, ')', $pos1 + 5);
         if ($pos1 > 0 && $pos2 > 0) {
             $debugstr = str_replace(substr($debugstr,$pos1+17,$pos2-$pos1-17),'***', $debugstr);
         }
         $err  = $e->getMessage() . " = " . $e->getFile(). " = " . $e->getLine() . "\r\n" . $debugstr . "\r\n";
-        $this->log($err, 'error');
+        $this->log($err, [], 'error');
         if (!empty(static::one()->buglowers['to'])) {
             $headers = 'From: no-reply';
             @mail(static::one()->buglowers['to'], 'Error Handler', $err, $headers);
-        }
-
-        if ($e instanceof Http404) {
-            header('HTTP/1.0 404 Not found');
-            if( static::one()->output == 'json') {
-                die(json_encode(array('error' => 'Document not found')));
-            } elseif (file_exists($_SERVER['DOCUMENT_ROOT'] . '/404.php')) {
-                include $_SERVER['DOCUMENT_ROOT'] . '/404.php';
-                exit;
-            } else {
-                echo "Not found.";
-                exit;
-            }
-        }
-
-        if ($e instanceof Http403) {
-            header('HTTP/1.0 403 Forbidden');
-            if( static::one()->output == 'json') {
-                die(json_encode(array('error' => 'Access denied')));
-                return;
-            } elseif (file_exists($_SERVER['DOCUMENT_ROOT'] . '/403.php')) {
-                include $_SERVER['DOCUMENT_ROOT'] . '/403.php';
-                //static::one()->showPage('login', 'main');
-                return;
-            } else {
-                static::one()->showPage('login', 'main');
-            }
         }
 
         if (static::one()->debug == 'Y') {
@@ -275,7 +257,7 @@ class Core extends Only
             } catch(\Exception $ee){
             }
 
-            if( static::one()->output == 'json') {
+            if(static::one()->output == 'json') {
                 die(json_encode(array('error' => "Error code " . $e->getCode() . ": ".$e->getMessage().' in line ['.$e->getLine().'] in file ['.$e->getFile().']'."\n", 'errortrace' => $debugstr)));
                 return;
             }
@@ -287,7 +269,7 @@ class Core extends Only
             die();
         }
 
-        if( static::one()->output == 'json') {
+        if(static::one()->output == 'json') {
             header('HTTP/1.0 500 Internal server error', true);
             die(json_encode(array('error' => 'Unknown error')));
             return;
@@ -304,17 +286,6 @@ class Core extends Only
     public static function appShutdown()
     {
         $error = error_get_last();
-        /*
-            case E_ERROR:
-            case E_CORE_ERROR:
-            case E_COMPILE_ERROR:
-            case E_USER_ERROR:
-            case E_RECOVERABLE_ERROR:
-            case E_CORE_WARNING:
-            case E_COMPILE_WARNING:
-            case E_PARSE:
-        */
-        // Checking if last error is a fatal error
         if (! $error) {
             return ;
         }
@@ -324,10 +295,10 @@ class Core extends Only
             || ($error['type'] === E_USER_ERROR)
             || ($error['type'] === E_USER_NOTICE)
         ) {
-            $errstr = "ERROR: " . $error['type']. " |Msg : ".$error['message']." |File : ".$error['file']. " |Line : " . $error['line'];
-            static::one()->log($errstr, 'error');
+            $errstr = "ERROR: " . $error['type'] . " |Msg : " . $error['message'] . " |File : " . $error['file'] . " |Line : " . $error['line'];
+            static::one()->log($errstr, [], 'error');
 
-            if( static::one()->output == 'json') {
+            if (static::one()->output == 'json') {
                 header('HTTP/1.0 500 Internal server error');
                 if (static::one()->debug == 'Y') {
                     die(json_encode(array('error' => $errstr)));
@@ -339,7 +310,7 @@ class Core extends Only
 
             if (static::one()->debug == 'Y') {
                 echo "<pre>-----------------------------\n";
-                echo $errstr."\n";
+                echo $errstr . "\n";
                 echo "\n-----------------------------\n";
             }
 
@@ -395,33 +366,27 @@ class Core extends Only
         if (isset($this->web['shortcode'])) {
             $file = $this->web['shortcode'] . '-' . $file;
         }
-        if ($this->logdir > '' && file_exists($this->PATH_APP . $this->logdir)) {
-            $logname = realpath($this->PATH_APP . $this->logdir) . DIRECTORY_SEPARATOR . $file;
-        } else {
-            if (! file_exists($this->PATH_PUBLIC . 'logs' . DIRECTORY_SEPARATOR)) {
-                mkdir($this->PATH_PUBLIC . 'logs' . DIRECTORY_SEPARATOR);
-            }
-            $logname = $this->PATH_PUBLIC . 'logs' . DIRECTORY_SEPARATOR . $file;
+        if (! $this->logdir) {
+            $this->logdir = 'logs';
         }
+
+        if (! file_exists($this->PATH_APP . $this->logdir)) {
+            mkdir($this->PATH_APP . $this->logdir, 0777, true);
+        }
+
+        $logname = realpath($this->PATH_APP . $this->logdir) . DIRECTORY_SEPARATOR . $file;
+
         $f = fopen($logname . '.txt', 'a');
         if ($f) {
             $ip = '-';
             if (! empty($_SERVER['REMOTE_ADDR'])) {
                 $ip = $_SERVER['REMOTE_ADDR'];
             }
-            fwrite($f, '[' . date('Y-m-d H:i:s.u') . '], ' . $ip . ', ' . $message . "\n");
+            fwrite($f, '[' . date('Y-m-d H:i:s.u') . '], ' . $ip . ', ' . $message . (empty($params) ? '' : "\nPARAMS: " . json_encode($params)) . "\n");
             fclose($f);
         } else {
             throw new \Exception('Cannot open log file');
         }
-    }
-
-
-    public function cleanString($string)
-    {
-        $string = strip_tags($string);
-        $string = preg_replace('/[^a-zA-Z0-9а-яА-ЯёЁ+\-_]/ui','', $string);
-        return $string;
     }
 
     public function getUserLang()
@@ -509,8 +474,8 @@ class Core extends Only
             $actionClass = 'CliActions\\' . $pageName . 'Action';
 
             if (! class_exists($actionClass)) {
-                static::log('action not found', 'error', ['action' => $actionClass, 'script' => $origPageName]);
-                throw new TExceptions\Http404('Script not found: ' . $origPageName);
+                static::log('action not found', ['action' => $actionClass, 'script' => $origPageName], 'error');
+                throw new \Exception('Script not found: ' . $origPageName);
             }
         } else {
             $pageName = explode('?', $_SERVER['REQUEST_URI']);
@@ -522,7 +487,6 @@ class Core extends Only
             }
 
             $this->curPage = $origPageName = $pageName = str_replace('/../', '', $pageName);
-
             if (file_exists($this->PATH_PUBLIC . $pageName) && is_file($this->PATH_PUBLIC . $pageName)) {
                 Response::one()->setFile($this->PATH_PUBLIC . $pageName)->sendFileAndExit();
             }
@@ -553,12 +517,18 @@ class Core extends Only
             );
 
             $pageName = mb_ucfirst($pageName, 'UTF-8') ;
-            $actionClass = 'WebActions\\' . $pageName . 'Action';
+            if ($this->nameSpace > '') {
+                $actionClass = $this->nameSpace . '\\WebActions\\' . $pageName . 'Action';
+            } else {
+                $actionClass = 'WebActions\\' . $pageName . 'Action';
+            }
+
             if (! class_exists($actionClass)) {
                 $actionClass2 = 'WebActions\\' . $pageName . '\\DefaultAction';
+die("==".$actionClass);
                 if (! class_exists($actionClass2)) {
-                    static::log('action not found', 'error', ['action' => $actionClass, 'page' => $origPageName]);
-                    throw new TExceptions\Http404('Page not found: ' . $origPageName);
+                    static::log('action not found', ['action' => $actionClass, 'page' => $origPageName], 'error');
+                    throw new \Exception('Page not found: ' . $origPageName);
                 } else {
                     $actionClass = $actionClass2;
                 }

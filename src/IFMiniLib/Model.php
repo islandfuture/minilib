@@ -610,7 +610,7 @@ class Model implements JsonSerializable
                 . " LIMIT 1";
         }//end if else
 
-        $st = DB::I()->prepare($sql);
+        $st = DB::one()->prepare($sql);
         $result = false;
         if ($st) {
             $result = $st->execute($values);
@@ -620,7 +620,7 @@ class Model implements JsonSerializable
 
         if ($result !== false) {
             if ($result === 0) {
-                $err = DB::I()->errorInfo();
+                $err = DB::one()->errorInfo();
                 if ($err[0] != '00000') {
                     App::one()->log('Error in ' . $className . '::save;', ['debug' => print_r($err, true), 'sql' => $sql], 'error');
                 }
@@ -715,8 +715,8 @@ class Model implements JsonSerializable
 
         $result = 0;
         if (sizeof($values) + sizeof($values_secrets) > 0) {
-            if ($key != 'serverTime' && static::is('serverTime') && static::is('serverId')) {
-                $values['serverTime'] = (string)microtime(true);
+            if ($key != 'serverTS' && static::is('serverTS') && static::is('serverId')) {
+                $values['serverTS'] = (string)microtime(true);
                 if ($key != 'serverId' && App::one()->serverId > '' && $this->serverId !== App::one()->serverId) {
                     $values['serverId'] = App::one()->serverId;
                 }
@@ -743,7 +743,7 @@ class Model implements JsonSerializable
                 " WHERE $idname = :" . $idname;
             $values[$idname] = $this->$idname;
 
-            $st = DB::I()->prepare($sql);
+            $st = DB::one()->prepare($sql);
             $result = false;
             if ($st) {
                 $result = $st->execute($values);
@@ -792,13 +792,13 @@ class Model implements JsonSerializable
         }
 
         if (
-            !in_array('serverTime', $fields)
-            && static::is('serverTime')
+            !in_array('serverTS', $fields)
+            && static::is('serverTS')
             && static::is('serverId')
         ) {
-            $fields[] = 'serverTime';
-            $this->__set('serverTime', (string)microtime(true));
-            $values['serverTime'] = $this->serverTime;
+            $fields[] = 'serverTS';
+            $this->__set('serverTS', (string)microtime(true));
+            $values['serverTS'] = $this->serverTS;
             if ($this->serverId !== App::one()->serverId) {
                 $fields[] = 'serverId';
                 $this->__set('serverId', App::one()->serverId);
@@ -855,7 +855,7 @@ class Model implements JsonSerializable
                     " WHERE $idname = :" . $idname;
             $values[$idname] = $this->$idname;
 
-            $st = DB::I()->prepare($sql);
+            $st = DB::one()->prepare($sql);
             $result = false;
             if ($st) {
                 $result = $st->execute($values);
@@ -921,17 +921,17 @@ class Model implements JsonSerializable
         $addupdate = '';
         $upd = "`" . $field . "` = `" . $field . "` + " . $step;
         $values = [];
-        if (static::is('serverTime') && static::is('serverId')) {
-            $this->serverId = $values['serverId'] = App::I()->serverid;
-            $this->serverTime = $values['serverTime'] = (string)microtime(true);
-            $upd .= ", `serverTime` = :serverTime, `serverId` = :serverId ";
+        if (static::is('serverTS') && static::is('serverId')) {
+            $this->serverId = $values['serverId'] = App::one()->serverid;
+            $this->serverTS = $values['serverTS'] = (string)microtime(true);
+            $upd .= ", `serverTS` = :serverTS, `serverId` = :serverId ";
         }
         $values[$idname] = $this->$idname;
 
         $sql = "UPDATE " . $table . " SET " . $upd .
                 " WHERE $idname = :" . $idname . " " . $where;
 
-        $st = DB::I()->prepare($sql);
+        $st = DB::one()->prepare($sql);
         $result = false;
         if ($st) {
             $result = $st->execute($values);
@@ -978,17 +978,17 @@ class Model implements JsonSerializable
         $addupdate = '';
         $upd = "`" . $field . "` = `" . $field . "` - " . $step;
         $values = [];
-        if (static::is('serverTime') && static::is('serverId')) {
-            $this->serverId = $values['serverId'] = App::I()->serverid;
-            $this->serverTime = $values['serverTime'] = (string)microtime(true);
-            $upd .= ", `serverTime` = :serverTime, `serverId` = :serverId ";
+        if (static::is('serverTS') && static::is('serverId')) {
+            $this->serverId = $values['serverId'] = App::one()->serverid;
+            $this->serverTS = $values['serverTS'] = (string)microtime(true);
+            $upd .= ", `serverTS` = :serverTS, `serverId` = :serverId ";
         }
         $values[$idname] = $this->$idname;
 
         $sql = "UPDATE " . $table . " SET " . $upd .
                 " WHERE $idname = :" . $idname . " " . $where;
 
-        $st = DB::I()->prepare($sql);
+        $st = DB::one()->prepare($sql);
         $result = false;
         if ($st) {
             $result = $st->execute($values);
@@ -1235,10 +1235,10 @@ class Model implements JsonSerializable
             $sql = DB::generateSelectSQL($params, $values);
 
             $addupdate = '';
-            if (static::is('serverTime') && static::is('serverId')) {
+            if (static::is('serverTS') && static::is('serverId')) {
                 $this->serverId = App::one()->serverId;
-                $this->serverTime = (string)microtime(true);
-                $addupdate = ", t0.serverId='" . App::one()->serverId . "', t0.serverTime='" . $this->serverTime . "' ";
+                $this->serverTS = (string)microtime(true);
+                $addupdate = ", t0.serverId='" . App::one()->serverId . "', t0.serverTS='" . $this->serverTS . "' ";
             }
 
             $sql = "UPDATE `" . static::getTable() . "` as t0, (" . $sql . " LIMIT 1) as t1 SET t0.`" . $fieldname . "` = t1.`" . $fieldname . "`+" . intval($step) . $addupdate . " WHERE `" . $idname . "` = '" . $this->$idname . "' ";

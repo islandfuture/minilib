@@ -84,27 +84,16 @@ class Validator extends Only
                 return ;
             }
 
-            if (substr($rule, 0, 8) === 'string') {
-                if ($value === null) {
-                    $value = '';
-                } else {
-                    $value = Clean::string($value);
-                }
-
-                $this->data[$field] = $value;
-                return ;
-            }
-
             if (substr($rule, 0, 4) === 'html') {
                 if ($value === null) {
                     $value = '';
                 } else {
                     $args = explode(':', $rule);
-                    $symbol = '';
+                    $tags = '';
                     if (isset($args[1])) {
-                        $symbol = $args[1];
+                        $tags = $args[1];
                     }
-                    $value = Clean::stringNoStripTags($value, $symbol);
+                    $value = Clean::html($value, $tags);
                 }
 
                 $this->data[$field] = $value;
@@ -156,7 +145,7 @@ class Validator extends Only
                 if ($value > '' && filter_var($value, FILTER_VALIDATE_DOMAIN)) {
                     $this->data[$field] = $value;
                 } else {
-                    $this->errors[$field][] = 'Invalid domain ' . $this->data[$field];
+                    $this->errors[$field][] = 'Invalid domain ' . $value;
                 }
                 return ;
             }

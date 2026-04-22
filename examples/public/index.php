@@ -1,6 +1,5 @@
 <?php
-$_SERVER['DOCUMENT_ROOT'] = __DIR__;
-include $_SERVER['DOCUMENT_ROOT']. DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'inc' . DIRECTORY_SEPARATOR . 'class_app.php';
-App::I()->init();
+include __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'app' . DIRECTORY_SEPARATOR . 'App.php';
+\Example\App::one()->init()->run();
 
-echo "Hello!!! // ".App::I()->web['shortcode']."\n";
+echo "Hello!!! // " . \Example\App::one()->web['shortcode'] . "\n";

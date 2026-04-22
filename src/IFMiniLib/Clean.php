@@ -4,22 +4,20 @@ namespace IFMiniLib;
 
 class Clean
 {
-    public static function string($string, $symbols = '')
+    public static function string($string, $symbols = '', $stripTags = true)
     {
-        $string = strip_tags($string);
+        if ($stripTags) {
+            $string = strip_tags($string);
+        }
         $string = preg_replace('/[^a-zA-Zёа-яЁА-ЯЁёäöüÄÖÜßèéûşç0-9\p{L}\p{N} +\-_\:' . $symbols . ']/ui', '', $string);
         return $string;
     }
 
-    public static function stringNoStripTags($string, $symbols = '')
+    public static function stringMb4($str, $stripTags = true)
     {
-        $string = preg_replace('/[^a-zA-Zёа-яЁА-ЯЁёäöüÄÖÜßèéûşç0-9\p{L}\p{N} +\-_\:' . $symbols . ']/ui', '', $string);
-
-        return $string;
-    }
-
-    public static function stringMb4($str)
-    {
+        if ($stripTags) {
+            $string = strip_tags($string);
+        }
         $str = preg_replace("/[\x{10000}-\x{10FFFF}]/u", "\xEF\xBF\xBD", $str);
         return $str;
     }
@@ -33,9 +31,50 @@ class Clean
 
     public static function lettersAndNumbers($str)
     {
-        $str = preg_replace("/[^A-Za-z0-9-_.\/]+/", "", $str);
         $str = strip_tags($str);
+        $str = preg_replace("/[^A-Za-z0-9-_.\/]+/", "", $str);
         return $str;
+    }
+
+    public static function html($html, $allowedTags = '')
+    {
+        if ($allowedTags > '') {
+            $html = strip_tags($html, $allowedTags);
+        }
+
+        // composer require symfony/html-sanitizer
+        $sanitizer = new \Symfony\Component\HtmlSanitizer\HtmlSanitizer(
+            (new \Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig())->allowSafeElements()
+        );
+        $clean = $sanitizer->sanitize($html);
+        return $clean;
+    }
+
+    public static function json($json, $sanityze = false): ?string
+    {
+        if (!is_string($json)) {
+            return null;
+        }
+
+        $json = trim($json);
+
+        try {
+            // Просто проверяем что строка валидный JSON и нормализуем её
+            $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            // Рекурсивно санируем строковые значения
+            if ($sanityze) {
+                array_walk_recursive($decoded, function (&$value) {
+                    if (is_string($value)) {
+                        $value = strip_tags($value);
+                        $value = htmlspecialchars($value, ENT_QUOTES | ENT_HTML5, 'UTF-8', false);
+                    }
+                });
+            }
+
+            return json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            return null;
+        }
     }
 
     public static function htmlentitiesValuesInArray($array)
@@ -98,47 +137,31 @@ class Clean
             return false;
         }
 
-        $isAttack = 0;
+        $url = self::findXssInUrl($url);
 
-        if (strpos($url, "eval") !== false) {
-            $url = str_replace("eval", 'еvаl', $url);
-            $isAttack++;
-        }
-        if (strpos($url, "atob") !== false) {
-            $url = str_replace("atob", 'аtоb', $url);
-            $isAttack++;
-        }
-        if (strpos($url, "onerror") !== false) {
-            $url = str_replace("onerror", '', $url);
-            $isAttack++;
-        }
-        if (strpos($url, "onfocus") !== false) {
-            $url = str_replace("onfocus", '', $url);
-            $isAttack++;
-        }
-        if (strpos($url, "onclick") !== false) {
-            $url = str_replace("onclick", '', $url);
-            $isAttack++;
-        }
-        if (strpos($url, "><") !== false) {
-            $url = str_replace("><", '', $url);
-            $isAttack++;
-        }
-        if (strpos($url, "javascript:") !== false) {
-            $url = str_replace("javascript:", '', $url);
-            $isAttack++;
-        }
-
-        if ($isAttack > 1) {
-            App::I()->log("[Bad URL]: XSS: " . $original, 'error', ['params' => [$url]]);
+        if ($url === false) {
+            App::one()->log("[Bad URL]: XSS: " . $original, 'error', ['params' => [$url]]);
             return false;
         }
 
-        $href = '<a href="' . str_replace('&amp;', '&', $url) . '">t</a>';
-        $href2 = htmLawed($href, array('safe' => 1, 'deny_attribute' => 'style,onerror,onfocus,onblur,onclick','schemes' => 'href: http,https'));
-        $href2 = str_replace('&amp;', '&', $href2);
-        if ($href2 !== $href) {
-            App::I()->log("[Bad URL]: XSS after htmLawed: " . $original, 'error', ['params' => [$href, $href2]]);
+        // Декодируем все возможные варианты кодирования
+        $decoded = html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $decoded = rawurldecode($decoded);
+        $decoded = strtolower($decoded);
+
+        // Убираем пробелы и управляющие символы (в т.ч. %00, %09 и т.д.)
+        $decoded = preg_replace('/[\x00-\x20\x7f]+/', '', $decoded);
+
+        // Проверяем схему после полного декодирования
+        $scheme = parse_url($decoded, PHP_URL_SCHEME);
+        if (!in_array($scheme, ['http', 'https'])) {
+            App::one()->log("[Bad URL]: invalid scheme: " . $original, 'error', ['url' => $url, 'decoded' => $decoded, 'scheme' => $scheme, 'original' => $original]);
+            return false;
+        }
+
+        // Проверяем на javascript: с любым кодированием
+        if (preg_match('/j[\s\x00]*a[\s\x00]*v[\s\x00]*a[\s\x00]*s[\s\x00]*c[\s\x00]*r[\s\x00]*i[\s\x00]*p[\s\x00]*t[\s\x00]*:/i', $decoded)) {
+            App::one()->log("[Bad URL]: javascript scheme: " . $original, 'error', ['url' => $url, 'decoded' => $decoded, 'scheme' => $scheme, 'original' => $original]);
             return false;
         }
 
@@ -222,14 +245,8 @@ class Clean
         return $str;
     }
 
-    public static function url($url, $shemes = 'http,https')
+    public static function findXssInUrl($url)
     {
-        if (is_null($url)) {
-            $url = '';
-        }
-        $url = trim($url);
-        $url = strip_tags($url);
-
         $isAttack = 0;
         if (strpos($url, "eval") !== false) {
             $url = str_replace("eval", 'еvаl', $url);
@@ -261,6 +278,22 @@ class Clean
         }
 
         if ($isAttack > 1) {
+            return false;
+        }
+
+        return $url;
+    }
+
+    public static function url($url, $shemes = 'http,https')
+    {
+        if (is_null($url)) {
+            $url = '';
+        }
+        $url = trim($url);
+        $url = strip_tags($url);
+
+        $url = self::findXssInUrl($url);
+        if ($url === false) {
             return false;
         }
 
@@ -304,9 +337,9 @@ class Clean
             return '';
         }
 
-        $emailaccount = self::stringHl($ar[0]);
+        $emailaccount = self::string($ar[0]);
         $domain = $ar[1];
-        $domain = self::sanitizeDomain($domain, false, false);
+        $domain = self::sanitizeDomain($domain, false);
         // если домен рускоязычный, то конвертнем его
         if (isset($domain) && preg_match("/[^a-zA-Z.\-_0-9]+/i", $domain)) {
             $domain = substr($domain, 0, 4) != 'xn--' ? idn_to_ascii($domain, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46) : $domain;
@@ -423,7 +456,7 @@ class Clean
     {
         if ($value <> "") {
             if (1 === preg_match('~[0-9]~', $value)) {
-                settype($value, "float");
+                $value = (float)$value;
             } else {
                 $value = '';
             }
@@ -476,7 +509,7 @@ class Clean
 
     public static function ipnet($ipnet)
     {
-        list ($subnet, $bits) = explode('/', $ipnet);
+        list ($subnet, $bits) = strpos($ipnet, '/') !== false ? explode('/', $ipnet) : [$ipnet, 32];
         $subnet = self::ip($subnet);
         if ($subnet == '') {
             return '';
@@ -592,7 +625,7 @@ class Clean
      * @param $str
      * @return string
      */
-    public static function hideString($str)
+    public static function hideString(string $str): string
     {
         if (!is_string($str)) {
             return '[***]';
