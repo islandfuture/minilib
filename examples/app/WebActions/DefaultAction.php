@@ -13,7 +13,7 @@ class DefaultAction extends \IFMiniLib\BaseAction
     {
         if (! ActiveUser::one()->id) {
             //Response::one()->redirect('/login/', 302);
-            echo "You not loged in!";
+            echo "You are not loged in!";
         }
 
         $vars = [

@@ -25,7 +25,7 @@ class Validator extends Only
             $value = $data[$field] ?? null;
             $isRequired = (strpos($rules, 'required') !== false);
 
-            if (! $isRequired && empty($value)) {
+            if (! $isRequired && $value === null) {
                 $this->data[$field] = null;
                 continue;
             }
@@ -210,7 +210,7 @@ class Validator extends Only
                 return ;
             }
 
-            if (preg_match('/^exists:([\\a-zA-Z]+)$/', $rule, $matches)) {
+            if (preg_match('/^exists:([a-zA-Z0-9_\\]+)$/', $rule, $matches)) {
                 $className = $matches[1];
                 $object = empty($value) ? null : $className::getById($value);
                 if (! $object) {

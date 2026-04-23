@@ -396,7 +396,7 @@ class Model implements JsonSerializable
         return true;
     }
 
-    public function getUid()
+    public function genUid()
     {
         return str_replace('.', '', uniqid('', true));
     }
@@ -467,6 +467,16 @@ class Model implements JsonSerializable
                 if (isset($def[$key])) {
                     if (in_array($def[$key], array( 'CURRENT_TIMESTAMP', 'CURRENT_TIMESTAMP(4)', 'now()', 'NOW()', 'NULL' ))) {
                         $values[$key] = $def[$key];
+                        if ($def[$key] === 'NULL') {
+                            $values[$key] = null;
+                        } elseif ($def[$key] === 'CURRENT_TIMESTAMP(4)') {
+                            $microtime = microtime(true);
+                            $seconds = floor($microtime);
+                            $fraction = (int) floor(($microtime - $seconds) * 10000);
+                            $values[$key] = date('Y-m-d H:i:s', (int) $seconds) . '.' . str_pad((string) $fraction, 4, '0', STR_PAD_LEFT);
+                        } else {
+                            $values[$key] = date('Y-m-d H:i:s');
+                        }
                     } elseif (in_array($def[$key], [self::VALUE_UUID, self::VALUE_GUID])) {
                         $try = 0;
                         do {
@@ -487,7 +497,7 @@ class Model implements JsonSerializable
                             ]);
                             $try++;
                             if ($try == 5) {
-                                App::one()->log("Many attempts to exclude " . $key . " duplicates (" . $def[$key] . " try:{$try})", ['duplicateUid' => $uid, 'key' => $key, 'table' => $sTable], 'error');
+                                App::one()->log("Many attempts to exclude " . $key . " duplicates (" . $def[$key] . " try:{$try})", ['duplicateUid' => $uid, 'key' => $key, 'table' => $table], 'error');
                             }
                         } while ($isExists);
                         $values[$key] = $uid;
@@ -536,7 +546,7 @@ class Model implements JsonSerializable
                         ]);
                         $try++;
                         if ($try == 5) {
-                            App::one()->log("Many attempts to exclude " . $idname . " duplicates (" . $idDefaultType . " try:{$try})", ['duplicateUid' => $uid, 'key' => $idname, 'table' => $sTable], 'error');
+                            App::one()->log("Many attempts to exclude " . $idname . " duplicates (" . $idDefaultType . " try:{$try})", ['duplicateUid' => $uid, 'key' => $idname, 'table' => $table], 'error');
                         }
                     } while ($isExists);
                     $values[$idname] = $uid;
@@ -601,6 +611,7 @@ class Model implements JsonSerializable
                         continue;
                     }
                     $upd[] = $key . " = AES_ENCRYPT(:" . $key . ", UNHEX('" . $params['securesecret'] . "'))";
+                    $values[$key] = $value;
                 }
             }
 
@@ -666,7 +677,7 @@ class Model implements JsonSerializable
     }
 
 
-    public function saveField($key, $arams = [])
+    public function saveField($key, $params = [])
     {
         $types           = static::getTypes(); // for future
         $values          = [];
@@ -683,8 +694,8 @@ class Model implements JsonSerializable
         $value = $this->__get($key);
 
         // Выставляем базу и таблицу для запроса
-        if (!empty($arams['database'])) {
-            $table = '`' . $arams['database'] . '`.`' . static::getTable() . '`';
+        if (!empty($params['database'])) {
+            $table = '`' . $params['database'] . '`.`' . static::getTable() . '`';
         } elseif (static::getDatabase() > '') {
             $table = '`' . static::getDatabase() . '`.`' . static::getTable() . '`';
         } else {
@@ -734,11 +745,11 @@ class Model implements JsonSerializable
                     if ($key == $idname) {
                         continue;
                     }
-                    $upd[] = $key . " = AES_ENCRYPT(:" . $key . ", UNHEX('" . $arParams['securesecret'] . "'))";
+                    $upd[] = $key . " = AES_ENCRYPT(:" . $key . ", UNHEX('" . $params['securesecret'] . "'))";
                 }
             }
 
-            $sql = "UPDATE " . $sTable . 
+            $sql = "UPDATE " . $table . 
                 " SET " . implode(", ", $upd) .
                 " WHERE $idname = :" . $idname;
             $values[$idname] = $this->$idname;
@@ -825,7 +836,7 @@ class Model implements JsonSerializable
                     $value = base64_encode(json_encode($value));
                 }
 
-                if (!empty($arParams['securesecret']) && !empty($arParams['securefields']) && in_array($key, $arParams['securefields'])) {
+                if (!empty($params['securesecret']) && !empty($params['securefields']) && in_array($key, $params['securefields'])) {
                     $values_secrets[$key] = $value;
                 } else {
                     $values[$key] = $value;
@@ -847,11 +858,11 @@ class Model implements JsonSerializable
                     if ($key == $idname) {
                         continue;
                     }
-                    $upd[] = $key . " = AES_ENCRYPT(:" . $key . ", UNHEX('" . $arParams['securesecret'] . "'))";
+                    $upd[] = $key . " = AES_ENCRYPT(:" . $key . ", UNHEX('" . $params['securesecret'] . "'))";
                 }
             }
 
-            $sql = "UPDATE " . $sTable . " SET " . implode(", ", $upd) .
+            $sql = "UPDATE " . $table . " SET " . implode(", ", $upd) .
                     " WHERE $idname = :" . $idname;
             $values[$idname] = $this->$idname;
 
@@ -1148,8 +1159,11 @@ class Model implements JsonSerializable
         $params['sort'] = array($field => 'desc');
         $params['pageSize'] = 1;
         $params['page'] = 1;
-        $sSql = DB::generateSelectSQL($params);
-        $st = DB::one()->query($sSql, ['nocache' => true]);
+        $values = [];
+        $sql = DB::generateSelectSQL($params, $values);
+        $st = DB::one()->getStorage()->prepare($sql);
+
+        $st->execute($values);
         $iResult = false;
         if ($st) {
             $arTmp = $st->fetch(\PDO::FETCH_ASSOC);
@@ -1165,8 +1179,12 @@ class Model implements JsonSerializable
     {
         $params['model'] =  get_called_class();
         $params['fields'] = 'min(' . $field . ') as cnt';
-        $sSql = DB::generateSelectSQL($params);
-        $st = DB::one()->query($sSql, ['nocache' => true]);
+        $sql = DB::generateSelectSQL($params);
+        $values = [];
+        $sql = DB::generateSelectSQL($params, $values);
+        $st = DB::one()->getStorage()->prepare($sql);
+
+        $st->execute($values);
         $iResult = false;
         if ($st) {
             $arTmp = $st->fetch(\PDO::FETCH_ASSOC);
@@ -1184,8 +1202,11 @@ class Model implements JsonSerializable
         $params['fields'] = 'SUM(`' . $field . '`) as sum';
         $params['pageSize'] = 1;
         $params['page'] = 1;
-        $sql = DB::generateSelectSQL($params);
-        $st = DB::one()->query($sql, $sysOptions);
+        $values = [];
+        $sql = DB::generateSelectSQL($params, $values);
+        $st = DB::one()->getStorage()->prepare($sql);
+
+        $st->execute($values);
         $iResult = false;
         if ($st) {
             $tmp = $st->fetch(\PDO::FETCH_ASSOC);

@@ -16,7 +16,7 @@ class Clean
     public static function stringMb4($str, $stripTags = true)
     {
         if ($stripTags) {
-            $string = strip_tags($string);
+            $str = strip_tags($str);
         }
         $str = preg_replace("/[\x{10000}-\x{10FFFF}]/u", "\xEF\xBF\xBD", $str);
         return $str;
@@ -140,7 +140,7 @@ class Clean
         $url = self::findXssInUrl($url);
 
         if ($url === false) {
-            App::one()->log("[Bad URL]: XSS: " . $original, 'error', ['params' => [$url]]);
+            App::one()->log("[Bad URL]: XSS: " . $original, ['params' => [$url]], 'error');
             return false;
         }
 
@@ -155,13 +155,13 @@ class Clean
         // Проверяем схему после полного декодирования
         $scheme = parse_url($decoded, PHP_URL_SCHEME);
         if (!in_array($scheme, ['http', 'https'])) {
-            App::one()->log("[Bad URL]: invalid scheme: " . $original, 'error', ['url' => $url, 'decoded' => $decoded, 'scheme' => $scheme, 'original' => $original]);
+            App::one()->log("[Bad URL]: invalid scheme: " . $original, ['url' => $url, 'decoded' => $decoded, 'scheme' => $scheme, 'original' => $original], 'error');
             return false;
         }
 
         // Проверяем на javascript: с любым кодированием
         if (preg_match('/j[\s\x00]*a[\s\x00]*v[\s\x00]*a[\s\x00]*s[\s\x00]*c[\s\x00]*r[\s\x00]*i[\s\x00]*p[\s\x00]*t[\s\x00]*:/i', $decoded)) {
-            App::one()->log("[Bad URL]: javascript scheme: " . $original, 'error', ['url' => $url, 'decoded' => $decoded, 'scheme' => $scheme, 'original' => $original]);
+            App::one()->log("[Bad URL]: javascript scheme: " . $original, ['url' => $url, 'decoded' => $decoded, 'scheme' => $scheme, 'original' => $original], 'error');
             return false;
         }
 
@@ -184,7 +184,7 @@ class Clean
             }
 
             // Проверка черного списка доменов
-            if (is_array(Application::one()->blackListDomains) && in_array($host, Application::one()->blackListDomains)) {
+            if (is_array(Core::$app->blackListDomains) && in_array($host, Core::$app->blackListDomains)) {
                 return false;
             }
 
@@ -372,7 +372,7 @@ class Clean
     public static function imageUrl($str)
     {
         $str = preg_replace("/[^a-zA-Z0-9\-_.:\/]/", "", $str);
-        $str = self::cleanUrl($str);
+        $str = self::url($str);
         $str = substr($str, 0, 500);
         return $str;
     }
@@ -525,16 +525,16 @@ class Clean
     /**
      * @param string $timezone
      * @param string $default
-     * @return DateTimeZone
-     * @throws Exception
+     * @return \DateTimeZone
+     * @throws \Exception
      */
-    public static function timezone($timezone, $default = 'GMT+3:00'): DateTimeZone
+    public static function timezone($timezone, $default = 'GMT+3:00'): \DateTimeZone
     {
         try {
-            return new DateTimeZone((string) $timezone);
-        } catch (Exception $exception) {
+            return new \DateTimeZone((string) $timezone);
+        } catch (\Exception $exception) {
         }
-        return new DateTimeZone($default);
+        return new \DateTimeZone($default);
     }
 
     /**

@@ -239,7 +239,7 @@ class DB extends Only
                         ) . ')';
 
                         foreach ($keyValues2 as $k => $v) {
-                            $keyValues[$k] = $v;
+                            $values[$k] = $v;
                         }
                     }
                 } elseif ($key == ':sql:') {
@@ -601,7 +601,7 @@ class DB extends Only
 
             /* Отправляем запрос к базе */
             if (!empty($sysOptions['debug'])) {
-                App::one()->log('Get count: ' . $sql, ['params' => $parameters], 'debug');
+                App::one()->log('Get count: ' . $sql, ['params' => $parametrs], 'debug');
                 static::$debugQuery = $sql;
             }
             $st = DB::one()->getStorage()->prepare($sql);
@@ -671,8 +671,8 @@ class DB extends Only
         }
 
         $limit = '';
-        if (!empty($parametrs['iPageSize'])) {
-            $limit = " LIMIT " . intval($parametrs['iPageSize']);
+        if (!empty($parametrs['pageSize'])) {
+            $limit = " LIMIT " . intval($parametrs['pageSize']);
         }
 
         $values = [];
