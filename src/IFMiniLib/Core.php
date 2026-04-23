@@ -471,7 +471,11 @@ class Core extends Only
             );
 
             $pageName = mb_ucfirst($pageName, 'UTF-8') ;
-            $actionClass = 'CliActions\\' . $pageName . 'Action';
+            if ($this->nameSpace > '') {
+                $actionClass = $this->nameSpace . '\\CliActions\\' . $pageName . 'Action';
+            } else {
+                $actionClass = 'CliActions\\' . $pageName . 'Action';
+            }
 
             if (! class_exists($actionClass)) {
                 static::log('action not found', ['action' => $actionClass, 'script' => $origPageName], 'error');
@@ -525,7 +529,7 @@ class Core extends Only
 
             if (! class_exists($actionClass)) {
                 $actionClass2 = 'WebActions\\' . $pageName . '\\DefaultAction';
-die("==".$actionClass);
+
                 if (! class_exists($actionClass2)) {
                     static::log('action not found', ['action' => $actionClass, 'page' => $origPageName], 'error');
                     throw new \Exception('Page not found: ' . $origPageName);

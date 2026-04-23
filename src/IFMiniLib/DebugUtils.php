@@ -10,7 +10,7 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'Only.php';
  * @author  Michael Akimov <michael@island-future.ru>
  * @version GIT: $Id$
  *
- * @example Application::one()->init(); // считываем данные из конфига и подготавливаем все для работы
+ * @example App::one()->init(); // считываем данные из конфига и подготавливаем все для работы
  */
 class DebugUtils extends Only
 {
@@ -39,7 +39,7 @@ class DebugUtils extends Only
     {
         if ($this->isActivate) {
             if (! isset($this->arTimes[$name]['start'])) {
-                $this->arTimes[$name] = ['start' => strtotime(Application::one()->startScript), 'end' => ''];
+                $this->arTimes[$name] = ['start' => strtotime(Core::$app->startScript), 'end' => ''];
             }
 
             $this->arTimes[$name]['end'] = microtime(true);
@@ -55,14 +55,14 @@ class DebugUtils extends Only
             }
 
             if (! isset($this->arTimes[$name]['start'])) {
-                $this->arTimes[$name]['start'] = strtotime(Application::one()->startScript);
+                $this->arTimes[$name]['start'] = strtotime(Core::$app->startScript);
             }
 
             if (! isset($this->arTimes[$name]['end'])) {
                 $this->arTimes[$name]['end'] = microtime(true);
             }
 
-            return number_format($this->arTimes[$name]['end'] - $this->arTimes[$name]['start'],5,',',' ');
+            return number_format($this->arTimes[$name]['end'] - $this->arTimes[$name]['start'], 5, ',', ' ');
         }
 
         return '';
@@ -75,12 +75,15 @@ class DebugUtils extends Only
 
             $str = [];
             foreach ($this->arTimes as $name => $arTime) {
-                $str[] = $name.': '.$this->getTime($name)." sec ";
+                $str[] = $name.': ' . $this->getTime($name) . " sec ";
             }
 
-            Application::one()->log("-------".(empty($_SERVER['REQUEST_URI'])?'':$_SERVER['REQUEST_URI'])."\n".implode("\n", $str)."\n-------------", 'debug-'.$file);
+            Core::$app->log("-------" . (
+                empty($_SERVER['REQUEST_URI'])
+                    ? ''
+                    : $_SERVER['REQUEST_URI']
+                ) . "\n" . implode("\n", $str) . "\n-------------", 'debug-' . $file);
         }
         return $this;
     }
-
 }
