@@ -10,6 +10,7 @@ namespace IFMiniLib;
  *
  * @example в рамках выполнения скрипта сессия всегда одна.
  *      ActiveUser::one()->iRoleId = 1
+ * @property mixed $...
  **/
 
 class ActiveUser extends Only
@@ -30,27 +31,37 @@ class ActiveUser extends Only
         return $this->hasError;
     }
 
-    public function __get($sName)
+    /**
+     * Возвращает значение поля или объект или массив
+     * @param string $name название поля или связи
+     * @return mixed
+     */
+    public function __get($name)
     {
-        if (empty($_SESSION['MINILIB_USER'][$sName])) {
-            $_SESSION['MINILIB_USER'][$sName] = '';
+        if (empty($_SESSION['MINILIB_USER'][$name])) {
+            $_SESSION['MINILIB_USER'][$name] = '';
         }
 
-        return $_SESSION['MINILIB_USER'][$sName];
+        return $_SESSION['MINILIB_USER'][$name];
     }
 
-    public function __set($sName, $sVal)
+    /**
+     * Устанавливает значение поля или объекта или массива
+     * @param string $name название поля или связи
+     * @param mixed $value значение
+     */
+    public function __set($name, $value)
     {
         if (empty($_SESSION['MINILIB_USER'])) {
-            $_SESSION['MINILIB_USER'] = array();
+            $_SESSION['MINILIB_USER'] = [];
         }
-        $_SESSION['MINILIB_USER'][$sName] = $sVal;
+        $_SESSION['MINILIB_USER'][$name] = $sVal;
     }
 
-    protected function afterConstruct($arParams)
+    protected function afterConstruct($params)
     {
-        if ($arParams && ! empty($arParams['sModel'])) {
-            static::$sUserClassName = $arParams['sModel'];
+        if ($params && ! empty($params['sModel'])) {
+            static::$sUserClassName = $params['sModel'];
         }
 
         if (session_status()!=PHP_SESSION_ACTIVE) {
@@ -62,7 +73,7 @@ class ActiveUser extends Only
         }
 
         if (empty($_SESSION['MINILIB_USER'])) {
-            $_SESSION['MINILIB_USER'] = array();
+            $_SESSION['MINILIB_USER'] = [];
         }
 
         if (static::$sUserClassName != 'none') {
@@ -154,7 +165,8 @@ class ActiveUser extends Only
         $_SESSION = array();
 
         //уничтожаем сессию
-        setcookie(session_name(), session_id(), time()-60*60*24, "/", "", true, true);
+        $secure = ! empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        setcookie(session_name(), '', time() - 60 * 60 * 24, '/', '', $secure, true);
         session_unset();
         session_destroy();
     }

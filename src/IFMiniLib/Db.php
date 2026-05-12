@@ -14,6 +14,7 @@ use \IFMiniLib\Only as Only;
 
 class DB extends Only
 {
+	/** @var string */
     public static $debugQuery = '';
     /**
      * @var array кеш для хранения запросов во время выполнения скрипта

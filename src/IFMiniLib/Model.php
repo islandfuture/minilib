@@ -15,7 +15,7 @@ use App;
  * задать величину сдвига, например 2:  App::one()->uidOffset=2
  * это будет означать что все случайные числа будут заканчиваться на 2
  */
-class Model implements JsonSerializable
+class Model implements \JsonSerializable
 {
     public const VALUE_AUTOINC = 'AUTOINC';
     public const VALUE_UUID = 'UUID';
@@ -1124,9 +1124,9 @@ class Model implements JsonSerializable
     }
 
     /**
-     * @param $params
+     * @param array $params
      * @param array $sysOptions
-     * @return static
+     * @return static|null
      */
     public static function getRow($params, $sysOptions = [])
     {
@@ -1138,7 +1138,7 @@ class Model implements JsonSerializable
     /**
      * @param $params
      * @param array $sysOptions
-     * @return static[]
+     * @return static[]|null
      */
     public static function getRows($params, $sysOptions = [])
     {
@@ -1146,12 +1146,23 @@ class Model implements JsonSerializable
         return DB::one()->getAll($params, $sysOptions);
     }
 
+    /**
+     * @param $params
+     * @param array $sysOptions
+     * @return int|null
+     */
     public static function getCount($params, $sysOptions = [])
     {
         $params['model'] =  get_called_class();
         return DB::one()->getCountAll($params, $sysOptions);
     }
 
+    /**
+     * @param string $field
+     * @param array $params
+     * @param array $sysOptions
+     * @return int|false
+     */
     public static function getMax($field, $params, $sysOptions = [])
     {
         $params['model'] =  get_called_class();
@@ -1175,6 +1186,12 @@ class Model implements JsonSerializable
         return $iResult;
     }
 
+    /**
+     * @param string $field
+     * @param array $params
+     * @param array $sysOptions
+     * @return int|false
+     */
     public static function getMin($field, $params, $sysOptions = [])
     {
         $params['model'] =  get_called_class();
@@ -1196,6 +1213,12 @@ class Model implements JsonSerializable
         return $iResult;
     }
 
+    /**
+     * @param string $field
+     * @param array $params
+     * @param array $sysOptions
+     * @return int|false
+     */
     public static function getSum($field, $params, $sysOptions = array())
     {
         $params['model'] =  get_called_class();
@@ -1220,6 +1243,11 @@ class Model implements JsonSerializable
         return $iResult;
     }
 
+    /**
+     * @param mixed $id
+     * @param array $sysParams
+     * @return static|null
+     */
     public static function getById($id, $sysParams = [])
     {
         $idName = static::getIdName();
@@ -1244,6 +1272,13 @@ class Model implements JsonSerializable
         return DB::getOne($params, $specs);
     }
 
+    /**
+     * @param string $fieldname
+     * @param array $params
+     * @param int $step
+     * @return bool
+     * @throws \PDOException
+     */
     public function setMaxValue($fieldname, $params, $step = 1)
     {
         if (static::is($fieldname)) {
@@ -1327,7 +1362,8 @@ class Model implements JsonSerializable
         $this->attributes($data);
     }
 
-    public function jsonSerialize() {
+    public function jsonSerialize(): mixed
+    {
         return $this->__getFields();
     }
 

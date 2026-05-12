@@ -20,7 +20,7 @@ namespace IFMiniLib;
 class Only
 {
     /**
-     * @var Array массив для хранения уникальных экземпляров
+     * @var array<class-string, static> массив для хранения уникальных экземпляров
      */
     private static $_instances = [];
 
@@ -48,19 +48,16 @@ class Only
     /**
      * возврщает один и тот же экземпляр этого класса
      * @example Only::one()
-     * @return Only
+     * @return static
      **/
     public static function one($params = null)
     {
-        $className = get_called_class();
-        $className = strtolower($className);
+        $className = static::class;
 
         if (empty(self::$_instances[$className]) ) {
-            if (empty($params)) {
-                self::$_instances[$className] = new $className();
-            } else {
-                self::$_instances[$className] = new $className($params);
-            }
+            self::$_instances[$className] = empty($params)
+                ? new static()
+                : new static($params);
         }
 
         return self::$_instances[$className];

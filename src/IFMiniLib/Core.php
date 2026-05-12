@@ -370,11 +370,11 @@ class Core extends Only
             $this->logdir = 'logs';
         }
 
-        if (! file_exists($this->PATH_APP . $this->logdir)) {
-            mkdir($this->PATH_APP . $this->logdir, 0777, true);
+        if (! file_exists($this->PATH_ROOT . $this->logdir)) {
+            mkdir($this->PATH_ROOT . $this->logdir, 0777, true);
         }
 
-        $logname = realpath($this->PATH_APP . $this->logdir) . DIRECTORY_SEPARATOR . $file;
+        $logname = realpath($this->PATH_ROOT . $this->logdir) . DIRECTORY_SEPARATOR . $file;
 
         $f = fopen($logname . '.txt', 'a');
         if ($f) {
@@ -470,7 +470,7 @@ class Core extends Only
                 -1
             );
 
-            $pageName = mb_ucfirst($pageName, 'UTF-8') ;
+            $pageName = \mb_ucfirst($pageName, 'UTF-8') ;
             if ($this->nameSpace > '') {
                 $actionClass = $this->nameSpace . '\\CliActions\\' . $pageName . 'Action';
             } else {
@@ -520,7 +520,7 @@ class Core extends Only
                 -1
             );
 
-            $pageName = mb_ucfirst($pageName, 'UTF-8') ;
+            $pageName = \mb_ucfirst($pageName, 'UTF-8') ;
             if ($this->nameSpace > '') {
                 $actionClass = $this->nameSpace . '\\WebActions\\' . $pageName . 'Action';
             } else {
